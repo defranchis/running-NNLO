@@ -179,7 +179,7 @@ class running_object():
     def addScaleUncertaintyToResult(self,obj_up,obj_down):
         for mbin in range(0,self.nBins):
             scale_up = abs(self.d_mass_results[mbin].value-obj_down.d_mass_results[mbin].value)
-            scale_down = abs(self.d_mass_results[mbin].value-obj_down.d_mass_results[mbin].value)
+            scale_down = abs(self.d_mass_results[mbin].value-obj_up.d_mass_results[mbin].value)
             setattr(self.d_mass_results[mbin],'scale_up',scale_up)
             setattr(self.d_mass_results[mbin],'scale_down',scale_down)
             setattr(self.d_mass_results[mbin],'scale',max(scale_up,scale_down))
