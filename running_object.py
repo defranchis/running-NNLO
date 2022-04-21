@@ -14,14 +14,14 @@ class running_object():
     def __init__(self,infile_xsec_mass,infile_num_unc):
         
         self.isClone = False
-        self.exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
-        self.exp_err = np.array([var.err_xsec_1_up/2.+var.err_xsec_1_down/2.,var.err_xsec_2_up/2.+var.err_xsec_2_down/2.,
-                    var.err_xsec_3_up/2.+var.err_xsec_3_down/2.,var.err_xsec_4_up/2.+var.err_xsec_4_down/2])*self.exp_xsec/100.
+        self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.nBins = self.exp_xsec.shape[0]
+        self.extr_up, self.extr_down = self.getExtrapolationImpacts()
         self.d_xsec_vs_mass, self.d_xsec_vs_mass_scaleup, self.d_xsec_vs_mass_scaledown = self.readAllXsecVsMass(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
         self.d_mass_results = self.getAllMasses()
         self.estimateScaleUncertainties()
+        self.estimateExtrapolationUncertainties()
         self.printMassResults()
         
     def clone(self):
@@ -29,12 +29,40 @@ class running_object():
         tmp.isClone = True
         return tmp
 
+    def cloneIdentical(self):
+        return copy.deepcopy(self)
+    
     def update(self):
         self.d_mass_results = self.getAllMasses()
         if not self.isClone:
             self.estimateScaleUncertainties()
+        if not self.isClone:
+            self.estimateExtrapolationUncertainties()
         return
 
+    def getExperimentalResults(self):
+        exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
+        exp_err = np.array([var.err_xsec_1_up/2.+var.err_xsec_1_down/2.,var.err_xsec_2_up/2.+var.err_xsec_2_down/2.,
+                            var.err_xsec_3_up/2.+var.err_xsec_3_down/2.,var.err_xsec_4_up/2.+var.err_xsec_4_down/2])*exp_xsec/100.
+        corr_matrix = np.array([[1,var.corr_1_2,var.corr_1_3,var.corr_4_1],
+                                [var.corr_1_2,1,var.corr_3_2,var.corr_4_2],
+                                [var.corr_1_3,var.corr_3_2,1,var.corr_4_3],
+                                [var.corr_4_1,var.corr_4_2,var.corr_4_3,1]])
+        return exp_xsec, exp_err, corr_matrix
+
+    def getExtrapolationImpacts(self):
+
+        extr_up = dict()
+        extr_down = dict()
+
+        for i, name in enumerate(var.extr_name):
+            up = np.array([var.extr_1_up[i],var.extr_2_up[i],var.extr_3_up[i],var.extr_4_up[i]])*self.exp_xsec/100.
+            down = np.array([var.extr_1_down[i],var.extr_2_down[i],var.extr_3_down[i],var.extr_4_down[i]])*self.exp_xsec/100.
+            extr_up[name] = up
+            extr_down[name] = down
+        
+        return extr_up, extr_down
+    
     def readAllXsecVsMass(self,filename):
         bin_low = []
         f = open(filename)
@@ -157,15 +185,47 @@ class running_object():
             setattr(self.d_mass_results[mbin],'scale',max(scale_up,scale_down))
         return
 
-    def printMassResults(self,detailed=False):
+    def estimateExtrapolationUncertainties(self):
+        values = np.array([self.d_mass_results[i].value for i in range(0,self.nBins)])
+        extr_uncert_up = np.zeros(self.nBins)
+        extr_uncert_down = np.zeros(self.nBins)
+        for name in self.extr_up.keys():
+            obj_up = self.clone()
+            obj_down = self.clone()
+            obj_up.exp_xsec += self.extr_up[name]
+            obj_down.exp_xsec += self.extr_down[name]
+            obj_up.update()
+            obj_down.update()
+            up_values = np.array([obj_up.d_mass_results[i].value for i in range(0,self.nBins)])
+            down_values = np.array([obj_down.d_mass_results[i].value for i in range(0,self.nBins)])
+            extr_uncert_up += (up_values-values)**2
+            extr_uncert_down += (down_values-values)**2
+        extr_uncert_up = extr_uncert_up**.5
+        extr_uncert_down = extr_uncert_down**.5
+
+        self.addExtrapolationUncertaintyToResult(extr_uncert_up,extr_uncert_down)
+            
+        return
+            
+    def addExtrapolationUncertaintyToResult(self,extr_uncert_up,extr_uncert_down):
+        for mbin in range(0,self.nBins):
+            setattr(self.d_mass_results[mbin],'extr_up',extr_uncert_up[mbin])
+            setattr(self.d_mass_results[mbin],'extr_down',extr_uncert_down[mbin])
+            setattr(self.d_mass_results[mbin],'extr',max(self.d_mass_results[mbin].extr_up,self.d_mass_results[mbin].extr_down))
+
+            
+    def printMassResults(self,detailed=True):
         for mbin in range(0,self.nBins):
             if detailed:
-                print ('bin {}: mt(mu) = {:.2f} + {:.2f} - {:.2f} (exp) + {:.2f} - {:.2f} (scale)'
+                print ('bin {}: mt(mu) = {:.2f} +{:.2f} -{:.2f} (exp) +{:.2f} -{:.2f} (extr) +{:.2f} -{:.2f} (scale)'
                        .format(mbin+1,self.d_mass_results[mbin].value,
                                self.d_mass_results[mbin].err_up,self.d_mass_results[mbin].err_down,
+                               self.d_mass_results[mbin].extr_up,self.d_mass_results[mbin].extr_down,
                                self.d_mass_results[mbin].scale_up,self.d_mass_results[mbin].scale_down))
             else:
-                print ('bin {}: mt(mu) = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (scale)'
+                print ('bin {}: mt(mu) = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (extr) +/- {:.2f} (scale)'
                        .format(mbin+1,self.d_mass_results[mbin].value,
-                               self.d_mass_results[mbin].err,self.d_mass_results[mbin].scale))
+                               self.d_mass_results[mbin].err,
+                               self.d_mass_results[mbin].extr,
+                               self.d_mass_results[mbin].scale))
         return
