@@ -11,7 +11,7 @@ class mass_result():
 
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs):
         
         self.isClone = False
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
@@ -19,9 +19,14 @@ class running_object():
         self.extr_up, self.extr_down = self.getExtrapolationImpacts()
         self.d_xsec_vs_mass, self.d_xsec_vs_mass_scaleup, self.d_xsec_vs_mass_scaledown = self.readAllXsecVsMass(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
+        self.nPDFs = 30
+        self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
+        # to add once numerical uncertainties available 
+        # self.addCentralPDFtoList()
         self.d_mass_results = self.getAllMasses()
         self.estimateScaleUncertainties()
         self.estimateExtrapolationUncertainties()
+        self.estimatePDFuncertaities()
         self.printMassResults()
         
     def clone(self):
@@ -93,6 +98,91 @@ class running_object():
             d_down[i]=m_xsec_down
         return d, d_up, d_down
 
+    def readPDFuncertainties(self, inpah_PDFs):
+        d_pdf = dict()
+        for pdf in range(0,self.nPDFs):
+            d_pdf[pdf] = self.readPDFuncertainty(inpah_PDFs,pdf)
+        return d_pdf
+
+    def readPDFuncertainty(self,inpath_PDFs,pdf):
+        bin_low = []
+        f = open(inpath_PDFs.format(pdf))
+        lines = f.read().splitlines()
+        for l in lines:
+            if l == '': continue
+            if l.replace(' ','').startswith('#'): continue
+            low = int(l.split()[0])
+            if not low in bin_low:
+                bin_low.append(low)
+        bin_low.sort()
+        d = dict()
+        for i, low in enumerate(bin_low):
+            m_xsec = dict()
+            for l in lines:
+                if l == '': continue
+                if l.replace(' ','').startswith('#'): continue
+                if int(l.split()[0]) != low: continue
+                m_xsec[l.split()[-1]] = float(l.split()[2])
+            d[i]=m_xsec
+        return d
+
+    def estimatePDFuncertaities(self):
+        d_pdf = dict()
+        for pdf in range(1,self.nPDFs):
+            d_pdf[pdf] = self.estimatePDFuncertaity(pdf)
+        self.addPDFuncertaintyToResult(d_pdf)
+        return
+
+    def addPDFuncertaintyToResult(self,d_pdf):
+        for mbin in range(0,self.nBins):
+            total = 0
+            up = 0
+            down = 0
+            for pdf in range(1,self.nPDFs):
+                uncert = d_pdf[pdf][mbin].value - self.d_mass_results[mbin].value
+                setattr(self.d_mass_results[mbin],'PDF_{}'.format(pdf),uncert)
+                total += uncert**2
+                if uncert > 0:
+                    up += uncert**2
+                else:
+                    down += uncert**2
+            setattr(self.d_mass_results[mbin],'PDF',total)
+            setattr(self.d_mass_results[mbin],'PDF_up',up)
+            setattr(self.d_mass_results[mbin],'PDF_down',down)
+        return
+
+    def estimatePDFuncertaity(self,pdf):
+        pdf_rel_uncert = np.ones(self.nBins)
+        for mbin in range(0,self.nBins):
+            if not mbin in self.d_PDFunc[pdf].keys(): #torm
+                continue
+            if len(self.d_PDFunc[pdf][mbin].keys()) !=1 or len(self.d_PDFunc[0][mbin].keys())!=1:
+                raise RuntimeError('more than one mass point for PDF variations or no PDF variation at all')
+            if list(self.d_PDFunc[pdf][mbin].keys())[0] != list(self.d_PDFunc[0][mbin].keys())[0]:
+                raise ValueError('different mass points used to evaluate PDF variation')
+            pdf_rel_uncert[mbin] = list(self.d_PDFunc[pdf][mbin].values())[0]/list(self.d_PDFunc[0][mbin].values())[0]
+            
+        obj_pdf = self.clone()
+        for mbin in range(0,self.nBins):
+            for mass in obj_pdf.d_xsec_vs_mass[mbin].keys():
+                obj_pdf.d_xsec_vs_mass[mbin][mass] *= pdf_rel_uncert[mbin]
+
+        # here should also propagate the stat uncertainty correctly
+        # and make sure it's not double-counted for the central PDF (rather replaced)
+        # can also consider using only toys
+
+        obj_pdf.update()    
+
+        return obj_pdf.d_mass_results
+    
+    # to double check
+    def addCentralPDFtoList(self):
+        d = self.d_PDFunc[0]
+        for i in d.keys():
+            for mass in d[i].keys():
+                self.d_xsec_vs_mass[i][mass]=d[i][mass]
+        return
+    
     def readNumericalUncertJSON(self,filename):
         f = open(filename)
         data = json.load(f)
@@ -133,22 +223,24 @@ class running_object():
         f = rt.TF1('f','pol2')
         h_xsec.Fit(f,'Q')
         
-        h_xsec.SetMarkerStyle(8)
-        h_xsec.SetTitle('bin {}; mt [GeV]; xsec [pb]'.format(mbin+1))
-        l_central = rt.TLine(mass_list[0],self.exp_xsec[mbin],mass_list[-1],self.exp_xsec[mbin])
-        l_up = rt.TLine(mass_list[0],self.exp_xsec[mbin]+self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]+self.exp_err[mbin])
-        l_down = rt.TLine(mass_list[0],self.exp_xsec[mbin]-self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]-self.exp_err[mbin])
+        if not self.isClone:
 
-        l_central.SetLineColor(rt.kBlue)
-        l_up.SetLineColor(rt.kGreen)
-        l_down.SetLineColor(rt.kGreen)
-        
-        c = rt.TCanvas()
-        h_xsec.Draw('apl')
-        l_central.Draw('same')
-        l_up.Draw('same')
-        l_down.Draw('same')
-        c.SaveAs('{}/xsec_bin_{}.png'.format(od,mbin+1))
+            h_xsec.SetMarkerStyle(8)
+            h_xsec.SetTitle('bin {}; mt [GeV]; xsec [pb]'.format(mbin+1))
+            l_central = rt.TLine(mass_list[0],self.exp_xsec[mbin],mass_list[-1],self.exp_xsec[mbin])
+            l_up = rt.TLine(mass_list[0],self.exp_xsec[mbin]+self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]+self.exp_err[mbin])
+            l_down = rt.TLine(mass_list[0],self.exp_xsec[mbin]-self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]-self.exp_err[mbin])
+
+            l_central.SetLineColor(rt.kBlue)
+            l_up.SetLineColor(rt.kGreen)
+            l_down.SetLineColor(rt.kGreen)
+
+            c = rt.TCanvas()
+            h_xsec.Draw('apl')
+            l_central.Draw('same')
+            l_up.Draw('same')
+            l_down.Draw('same')
+            c.SaveAs('{}/xsec_bin_{}.png'.format(od,mbin+1))
 
         m = f.GetX(self.exp_xsec[mbin],100,200)
         err_up = f.GetX(self.exp_xsec[mbin]-self.exp_err[mbin],100,200) - m
@@ -217,15 +309,23 @@ class running_object():
     def printMassResults(self,detailed=True):
         for mbin in range(0,self.nBins):
             if detailed:
-                print ('bin {}: mt(mu) = {:.2f} +{:.2f} -{:.2f} (exp) +{:.2f} -{:.2f} (extr) +{:.2f} -{:.2f} (scale)'
+                print ('bin {}: mt(mu) = {:.2f} +{:.2f} -{:.2f} (exp) +{:.2f} -{:.2f} (extr) +{:.2f} -{:.2f} (PDF) +{:.2f} -{:.2f} (scale)'
                        .format(mbin+1,self.d_mass_results[mbin].value,
                                self.d_mass_results[mbin].err_up,self.d_mass_results[mbin].err_down,
                                self.d_mass_results[mbin].extr_up,self.d_mass_results[mbin].extr_down,
+                               self.d_mass_results[mbin].PDF_up,self.d_mass_results[mbin].PDF_down,
                                self.d_mass_results[mbin].scale_up,self.d_mass_results[mbin].scale_down))
             else:
-                print ('bin {}: mt(mu) = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (extr) +/- {:.2f} (scale)'
+                print ('bin {}: mt(mu) = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (extr) +/- {:.2f} (PDF) +/- {:.2f} (scale)'
                        .format(mbin+1,self.d_mass_results[mbin].value,
                                self.d_mass_results[mbin].err,
                                self.d_mass_results[mbin].extr,
+                               self.d_mass_results[mbin].PDF,
                                self.d_mass_results[mbin].scale))
         return
+
+    def printMassNominalResults(self):
+        masses = np.array([self.d_mass_results[i].value for i in range(0,self.nBins)])
+        print(masses)
+        return
+
