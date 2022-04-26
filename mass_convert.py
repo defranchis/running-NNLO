@@ -8,6 +8,12 @@ def mtmt2mtmu(mt, mu): #OK
     mtmu = crd.mMS2mMS(mt, asmt, asmu, cnst.nflav, cnst.nloops)
     return mtmu
 
+def mtmu2mtmu (mtmu1, mu1, mu2):
+    crd = rundec.CRunDec()
+    asmu1 = crd.AlphasExact(cnst.asMZ, cnst.MZ, mu1, cnst.nflav, cnst.nloops)
+    asmu2 = crd.AlphasExact(cnst.asMZ, cnst.MZ, mu2, cnst.nflav, cnst.nloops)
+    mtmu2 = crd.mMS2mMS(mtmu1, asmu1, asmu2, cnst.nflav, cnst.nloops)
+    return mtmu2
 
 def mtmu2mtp(mtmu,mu): #OK
     crd = rundec.CRunDec()

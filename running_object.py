@@ -2,6 +2,8 @@ import os, sys, copy, json
 import numpy as np
 import ROOT as rt
 import uncertainties
+from iminuit import Minuit
+from scipy import stats
 
 import variables as var
 import constants as cnst
@@ -12,11 +14,13 @@ class mass_result():
 
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,ref_bin=2):
         
         self.isClone = False
+        self.ref_bin = ref_bin-1
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.nBins = self.exp_xsec.shape[0]
+        self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.extr_up, self.extr_down = self.getExtrapolationImpacts()
         self.d_xsec_vs_mass, self.d_xsec_vs_mass_scaleup, self.d_xsec_vs_mass_scaledown = self.readAllXsecVsMass(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
@@ -30,6 +34,7 @@ class running_object():
         self.estimatePDFuncertaities()
         self.printMassResults()
         self.estimateRatios()
+        self.estimateBestRunning()
         
     def clone(self):
         tmp = copy.deepcopy(self)
@@ -384,11 +389,12 @@ class running_object():
     def estimateRatios(self):
         uncert_mass = np.array([self.d_mass_results[i].err for i in range(0,self.nBins)])
         values_mass = np.array([self.d_mass_results[i].value for i in range(0,self.nBins)])
+        self.mass_values = values_mass
         uncert_mass_diag = np.diag(uncert_mass)
         cov_mass_exp = np.matmul(uncert_mass_diag,np.matmul(self.corr_matrix,uncert_mass_diag))
-        masses = np.array(uncertainties.correlated_values(values_mass,cov_mass_exp))
-        ratios = masses / masses[1]
-        self.ratios = np.delete(ratios,1)
+        self.masses = np.array(uncertainties.correlated_values(values_mass,cov_mass_exp))
+        ratios = self.masses / self.masses[self.ref_bin]
+        self.ratios = np.delete(ratios,self.ref_bin)
         self.corr_ratio_exp = np.array(uncertainties.correlation_matrix(self.ratios))
         self.cov_ratio_exp = np.array(uncertainties.covariance_matrix(self.ratios))
         if not self.isClone:
@@ -400,8 +406,8 @@ class running_object():
             print()
         cov_mass_extr = self.getExtrapolationCovarianceMasses()
         masses_extr = np.array(uncertainties.correlated_values(values_mass,cov_mass_extr))
-        ratios_extr = masses_extr / masses_extr[1]
-        self.ratios_extr = np.delete(ratios_extr,1)
+        ratios_extr = masses_extr / masses_extr[self.ref_bin]
+        self.ratios_extr = np.delete(ratios_extr,self.ref_bin)
         self.corr_ratio_extr = np.array(uncertainties.correlation_matrix(self.ratios_extr))
         self.cov_ratio_extr = np.array(uncertainties.covariance_matrix(self.ratios_extr))
         if not self.isClone:
@@ -413,8 +419,8 @@ class running_object():
             print()
         cov_mass_pdf = self.getPDFCovarianceMasses()
         masses_pdf = np.array(uncertainties.correlated_values(values_mass,cov_mass_pdf))
-        ratios_pdf = masses_pdf / masses_pdf[1]
-        self.ratios_pdf = np.delete(ratios_pdf,1)
+        ratios_pdf = masses_pdf / masses_pdf[self.ref_bin]
+        self.ratios_pdf = np.delete(ratios_pdf,self.ref_bin)
         self.corr_ratio_pdf = np.array(uncertainties.correlation_matrix(self.ratios_pdf))
         self.cov_ratio_pdf = np.array(uncertainties.covariance_matrix(self.ratios_pdf))
 
@@ -427,8 +433,8 @@ class running_object():
             print()
         cov_mass_scale = self.getScaleCovarianceMasses()
         masses_scale = np.array(uncertainties.correlated_values(values_mass,cov_mass_scale))
-        ratios_scale = masses_scale / masses_scale[1]
-        self.ratios_scale = np.delete(ratios_scale,1)
+        ratios_scale = masses_scale / masses_scale[self.ref_bin]
+        self.ratios_scale = np.delete(ratios_scale,self.ref_bin)
         self.corr_ratio_scale = np.array(uncertainties.correlation_matrix(self.ratios_scale))
         self.cov_ratio_scale = np.array(uncertainties.covariance_matrix(self.ratios_scale))
         if not self.isClone:
@@ -442,8 +448,8 @@ class running_object():
         self.cov_ratio_tot_noscale = self.cov_ratio_exp + self.cov_ratio_extr + self.cov_ratio_pdf
         self.cov_ratio_tot = self.cov_ratio_tot_noscale + self.cov_ratio_scale
 
-        ratios_values = np.array([ratio.n for ratio in self.ratios])
-        self.ratios_tot_noscale = uncertainties.correlated_values(ratios_values,self.cov_ratio_tot_noscale)
+        self.ratio_values = np.array([ratio.n for ratio in self.ratios])
+        self.ratios_tot_noscale = uncertainties.correlated_values(self.ratio_values,self.cov_ratio_tot_noscale)
         self.corr_ratio_tot_noscale = uncertainties.correlation_matrix(self.ratios_tot_noscale)
         if not self.isClone:
             print ('\nratios (tot, no scale):')
@@ -452,5 +458,61 @@ class running_object():
             print ('\ncorrelations (tot, no scale):')
             print (self.corr_ratio_tot_noscale)
             print()
+        
+        return
+
+    def getTheoryRatio(self):
+        masses_evolved = np.array([conv.mtmu2mtmu(self.mass_values[self.ref_bin],self.scales[self.ref_bin],scale) for scale in self.scales])
+        return np.delete(masses_evolved/self.mass_values[self.ref_bin],self.ref_bin)
+
+    def getRunningX(self,x):
+        return x*(self.getTheoryRatio()-1)+1
+
+    def computeChi2(self,x=1):
+        return np.matmul(self.ratio_values-self.getRunningX(x), np.matmul(np.linalg.inv(self.cov_ratio_tot_noscale),self.ratio_values-self.getRunningX(x)))
+    
+    def estimateBestRunning(self):
+
+        od = 'plots_running'
+        if not os.path.exists(od):
+            os.makedirs(od)
+
+        ndf = self.ratio_values.shape[0]
+        print ('\nQCD running (x=1):')
+        chi2 = self.computeChi2(1)
+        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
+        print ('\nno running (x=0):')
+        chi2 = self.computeChi2(0)
+        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
+        print('excluded at {:.1f}% C.L.'.format((1-stats.chi2.sf(chi2,ndf))*100.))
+        print()
+
+        low = 0
+        high = 3
+        step = .1
+        x_scan = np.arange(low,high+step,step)
+        chi2_scan = np.array([self.computeChi2(x) for x in x_scan])
+
+        g = rt.TGraph()
+        for i,x in enumerate(x_scan):
+            g.SetPoint(i,x,chi2_scan[i])
+
+        c = rt.TCanvas()
+        g.Draw('ap')
+        g.SetTitle(';x;chi2')
+        g.SetMarkerStyle(8)
+        f = rt.TF1('f','pol2')
+        g.Fit(f,'Q')
+        c.SaveAs('{}/chi2_x.png'.format(od))
+        x_min = f.GetMinimumX(low,high+step)
+        y_min = f.GetMinimum(low,high+step)
+        x_down = f.GetX(y_min+1,low,x_min)
+        x_up = f.GetX(y_min+1,x_min,high+step)
+        err_x = (x_up-x_down)*.5
+        
+        print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(x_min, err_x))
+        chi2 = self.computeChi2(x_min)
+        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
+        print()
         
         return
