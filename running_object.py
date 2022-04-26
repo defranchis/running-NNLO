@@ -35,6 +35,7 @@ class running_object():
         self.printMassResults()
         self.estimateRatios()
         self.estimateBestRunning()
+        self.fitDynamicMassGeneration()
         
     def clone(self):
         tmp = copy.deepcopy(self)
@@ -448,6 +449,9 @@ class running_object():
         self.cov_ratio_tot_noscale = self.cov_ratio_exp + self.cov_ratio_extr + self.cov_ratio_pdf
         self.cov_ratio_tot = self.cov_ratio_tot_noscale + self.cov_ratio_scale
 
+        self.cov_mass_tot_noscale = cov_mass_exp + cov_mass_extr + cov_mass_pdf
+        self.cov_mass_tot = self.cov_mass_tot_noscale + cov_mass_scale
+        
         self.ratio_values = np.array([ratio.n for ratio in self.ratios])
         self.ratios_tot_noscale = uncertainties.correlated_values(self.ratio_values,self.cov_ratio_tot_noscale)
         self.corr_ratio_tot_noscale = uncertainties.correlation_matrix(self.ratios_tot_noscale)
@@ -470,12 +474,8 @@ class running_object():
 
     def computeChi2(self,x=1):
         return np.matmul(self.ratio_values-self.getRunningX(x), np.matmul(np.linalg.inv(self.cov_ratio_tot_noscale),self.ratio_values-self.getRunningX(x)))
-    
-    def estimateBestRunning(self):
 
-        od = 'plots_running'
-        if not os.path.exists(od):
-            os.makedirs(od)
+    def estimateBestRunning(self):
 
         ndf = self.ratio_values.shape[0]
         print ('\nQCD running (x=1):')
@@ -487,32 +487,43 @@ class running_object():
         print('excluded at {:.1f}% C.L.'.format((1-stats.chi2.sf(chi2,ndf))*100.))
         print()
 
-        low = 0
-        high = 3
-        step = .1
-        x_scan = np.arange(low,high+step,step)
-        chi2_scan = np.array([self.computeChi2(x) for x in x_scan])
+        minuit = Minuit(self.computeChi2, x=1)
+        minuit.migrad()
 
-        g = rt.TGraph()
-        for i,x in enumerate(x_scan):
-            g.SetPoint(i,x,chi2_scan[i])
-
-        c = rt.TCanvas()
-        g.Draw('ap')
-        g.SetTitle(';x;chi2')
-        g.SetMarkerStyle(8)
-        f = rt.TF1('f','pol2')
-        g.Fit(f,'Q')
-        c.SaveAs('{}/chi2_x.png'.format(od))
-        x_min = f.GetMinimumX(low,high+step)
-        y_min = f.GetMinimum(low,high+step)
-        x_down = f.GetX(y_min+1,low,x_min)
-        x_up = f.GetX(y_min+1,x_min,high+step)
-        err_x = (x_up-x_down)*.5
+        print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(minuit.values['x'], minuit.errors['x']))
+        chi2 = self.computeChi2(minuit.values['x'])
+        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf-1)*100.))
+        print()
         
-        print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(x_min, err_x))
-        chi2 = self.computeChi2(x_min)
+        return
+
+    def dynmass(self,scale,mtmt,Lambda):
+        Lambda *= 1000. #in TeV
+        return mtmt/(1-(mtmt/Lambda)**2)*(1-(scale/Lambda)**2)
+
+
+    def chi2dynmass(self,mtmt,Lambda):
+        return np.matmul(self.mass_values-self.dynmass(self.scales, mtmt, Lambda), np.matmul(np.linalg.inv(self.cov_mass_tot_noscale),self.mass_values-self.dynmass(self.scales, mtmt, Lambda)))
+
+    
+    def fitDynamicMassGeneration(self):
+
+        ndf = self.mass_values.shape[0]-2
+
+        minuit = Minuit(self.chi2dynmass, mtmt=170, Lambda=1)
+        minuit.migrad()
+
+        mtmt = minuit.values['mtmt']
+        err_mtmt = minuit.errors['mtmt']
+        Lambda = minuit.values['Lambda']
+        err_Lambda = minuit.errors['Lambda']
+
+        print('\nmt(mt) = {:.2f} +/- {:.2f} GeV'.format(mtmt,err_mtmt))
+        print('Lambda = {:.1f} +/- {:.1f} TeV'.format(Lambda,err_Lambda))
+        print()
+        chi2 = self.chi2dynmass(mtmt,Lambda)
         print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
         print()
         
         return
+    
