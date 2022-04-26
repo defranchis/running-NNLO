@@ -1,6 +1,7 @@
 import os, sys, copy, json
 import numpy as np
 import ROOT as rt
+import uncertainties
 
 import variables as var
 import constants as cnst
@@ -28,6 +29,7 @@ class running_object():
         self.estimateExtrapolationUncertainties()
         self.estimatePDFuncertaities()
         self.printMassResults()
+        self.estimateRatios()
         
     def clone(self):
         tmp = copy.deepcopy(self)
@@ -41,8 +43,8 @@ class running_object():
         self.d_mass_results = self.getAllMasses()
         if not self.isClone:
             self.estimateScaleUncertainties()
-        if not self.isClone:
             self.estimateExtrapolationUncertainties()
+            self.estimateRatios()
         return
 
     def getExperimentalResults(self):
@@ -272,8 +274,12 @@ class running_object():
         for mbin in range(0,self.nBins):
             scale_up = abs(self.d_mass_results[mbin].value-obj_down.d_mass_results[mbin].value)
             scale_down = abs(self.d_mass_results[mbin].value-obj_up.d_mass_results[mbin].value)
+            scale_up_sign = obj_up.d_mass_results[mbin].value - self.d_mass_results[mbin].value
+            scale_down_sign = obj_down.d_mass_results[mbin].value - self.d_mass_results[mbin].value
             setattr(self.d_mass_results[mbin],'scale_up',scale_up)
             setattr(self.d_mass_results[mbin],'scale_down',scale_down)
+            setattr(self.d_mass_results[mbin],'scale_up_sign',scale_up_sign)
+            setattr(self.d_mass_results[mbin],'scale_down_sign',scale_down_sign)
             setattr(self.d_mass_results[mbin],'scale',max(scale_up,scale_down))
         return
 
@@ -288,8 +294,15 @@ class running_object():
             obj_down.exp_xsec += self.extr_down[name]
             obj_up.update()
             obj_down.update()
-            up_values = np.array([obj_up.d_mass_results[i].value for i in range(0,self.nBins)])
-            down_values = np.array([obj_down.d_mass_results[i].value for i in range(0,self.nBins)])
+            up_values = np.array([obj_up.d_mass_results[i].value if obj_up.d_mass_results[i].value > self.d_mass_results[i].value else obj_down.d_mass_results[i].value
+                                  for i in range(0,self.nBins)])
+            down_values = np.array([obj_down.d_mass_results[i].value if obj_down.d_mass_results[i].value < self.d_mass_results[i].value else obj_up.d_mass_results[i].value
+                                  for i in range(0,self.nBins)])
+            up_values_sign = np.array([obj_up.d_mass_results[i].value - self.d_mass_results[i].value for i in range(0,self.nBins)])
+            down_values_sign = np.array([obj_down.d_mass_results[i].value - self.d_mass_results[i].value for i in range(0,self.nBins)])
+            for mbin in range(0,self.nBins):
+                setattr(self.d_mass_results[mbin],'extr_{}_up'.format(name),up_values_sign[mbin])
+                setattr(self.d_mass_results[mbin],'extr_{}_down'.format(name),down_values_sign[mbin])
             extr_uncert_up += (up_values-values)**2
             extr_uncert_down += (down_values-values)**2
         extr_uncert_up = extr_uncert_up**.5
@@ -307,6 +320,7 @@ class running_object():
 
             
     def printMassResults(self,detailed=True):
+        print ('\nmasses:')
         for mbin in range(0,self.nBins):
             if detailed:
                 print ('bin {}: mt(mu) = {:.2f} +{:.2f} -{:.2f} (exp) +{:.2f} -{:.2f} (extr) +{:.2f} -{:.2f} (PDF) +{:.2f} -{:.2f} (scale)'
@@ -329,3 +343,114 @@ class running_object():
         print(masses)
         return
 
+    def getExtrapolationCovarianceMasses(self):
+        cov_tot = np.zeros((self.nBins,self.nBins))
+        for extr in self.extr_up.keys():
+            cov = np.zeros((self.nBins,self.nBins))
+            for i in range(0,self.nBins):
+                for j in range(0,self.nBins):
+                    sign_i = abs(getattr(self.d_mass_results[i],'extr_{}_up'.format(extr)))/getattr(self.d_mass_results[i],'extr_{}_up'.format(extr))
+                    sign_j = abs(getattr(self.d_mass_results[j],'extr_{}_up'.format(extr)))/getattr(self.d_mass_results[j],'extr_{}_up'.format(extr))
+                    uncert_i = max(abs(getattr(self.d_mass_results[i],'extr_{}_up'.format(extr))),abs(getattr(self.d_mass_results[i],'extr_{}_down'.format(extr))))
+                    uncert_j = max(abs(getattr(self.d_mass_results[j],'extr_{}_up'.format(extr))),abs(getattr(self.d_mass_results[j],'extr_{}_down'.format(extr))))
+                    cov[i][j] = sign_i*sign_j*uncert_i*uncert_j
+            cov_tot += cov
+        return cov_tot
+                     
+    def getPDFCovarianceMasses(self):
+        cov_tot = np.zeros((self.nBins,self.nBins))
+        for pdf in range(1,self.nPDFs):
+            cov = np.zeros((self.nBins,self.nBins))
+            for i in range(0,self.nBins):
+                for j in range(0,self.nBins):
+                    cov[i][j] = getattr(self.d_mass_results[i],'PDF_{}'.format(pdf))*getattr(self.d_mass_results[j],'PDF_{}'.format(pdf))
+            cov_tot += cov
+        #torm, just for testing:
+        for i in range(0,self.nBins):
+            cov_tot[i][i] = max(cov_tot[i][i],1E-06)
+        return cov_tot
+
+    def getScaleCovarianceMasses(self):
+        cov = np.zeros((self.nBins,self.nBins))
+        for i in range(0,self.nBins):
+            for j in range(0,self.nBins):
+                sign_i = abs(getattr(self.d_mass_results[i],'scale_up_sign'))/getattr(self.d_mass_results[i],'scale_up_sign')
+                sign_j = abs(getattr(self.d_mass_results[j],'scale_up_sign'))/getattr(self.d_mass_results[j],'scale_up_sign')
+                uncert_i = max(abs(getattr(self.d_mass_results[i],'scale_up_sign')),abs(getattr(self.d_mass_results[i],'scale_down_sign')))
+                uncert_j = max(abs(getattr(self.d_mass_results[j],'scale_up_sign')),abs(getattr(self.d_mass_results[j],'scale_down_sign')))
+                cov[i][j] = sign_i*sign_j*uncert_i*uncert_j
+        return cov
+        
+    def estimateRatios(self):
+        uncert_mass = np.array([self.d_mass_results[i].err for i in range(0,self.nBins)])
+        values_mass = np.array([self.d_mass_results[i].value for i in range(0,self.nBins)])
+        uncert_mass_diag = np.diag(uncert_mass)
+        cov_mass_exp = np.matmul(uncert_mass_diag,np.matmul(self.corr_matrix,uncert_mass_diag))
+        masses = np.array(uncertainties.correlated_values(values_mass,cov_mass_exp))
+        ratios = masses / masses[1]
+        self.ratios = np.delete(ratios,1)
+        self.corr_ratio_exp = np.array(uncertainties.correlation_matrix(self.ratios))
+        self.cov_ratio_exp = np.array(uncertainties.covariance_matrix(self.ratios))
+        if not self.isClone:
+            print ('\nratios (exp):')
+            for i, ratio in enumerate(self.ratios):
+                print ('r_{} = {}'.format(i+1,ratio))
+            print ('\ncorrelations (exp):')
+            print (self.corr_ratio_exp)
+            print()
+        cov_mass_extr = self.getExtrapolationCovarianceMasses()
+        masses_extr = np.array(uncertainties.correlated_values(values_mass,cov_mass_extr))
+        ratios_extr = masses_extr / masses_extr[1]
+        self.ratios_extr = np.delete(ratios_extr,1)
+        self.corr_ratio_extr = np.array(uncertainties.correlation_matrix(self.ratios_extr))
+        self.cov_ratio_extr = np.array(uncertainties.covariance_matrix(self.ratios_extr))
+        if not self.isClone:
+            print ('\nratios (extr):')
+            for i, ratio in enumerate(self.ratios_extr):
+                print ('r_{} = {}'.format(i+1,ratio))
+            print ('\ncorrelations (extr):')
+            print (self.corr_ratio_extr)
+            print()
+        cov_mass_pdf = self.getPDFCovarianceMasses()
+        masses_pdf = np.array(uncertainties.correlated_values(values_mass,cov_mass_pdf))
+        ratios_pdf = masses_pdf / masses_pdf[1]
+        self.ratios_pdf = np.delete(ratios_pdf,1)
+        self.corr_ratio_pdf = np.array(uncertainties.correlation_matrix(self.ratios_pdf))
+        self.cov_ratio_pdf = np.array(uncertainties.covariance_matrix(self.ratios_pdf))
+
+        if not self.isClone:
+            print ('\nratios (pdf):')
+            for i, ratio in enumerate(self.ratios_pdf):
+                print ('r_{} = {}'.format(i+1,ratio))
+            print ('\ncorrelations (pdf):')
+            print (self.corr_ratio_pdf)
+            print()
+        cov_mass_scale = self.getScaleCovarianceMasses()
+        masses_scale = np.array(uncertainties.correlated_values(values_mass,cov_mass_scale))
+        ratios_scale = masses_scale / masses_scale[1]
+        self.ratios_scale = np.delete(ratios_scale,1)
+        self.corr_ratio_scale = np.array(uncertainties.correlation_matrix(self.ratios_scale))
+        self.cov_ratio_scale = np.array(uncertainties.covariance_matrix(self.ratios_scale))
+        if not self.isClone:
+            print ('\nratios (scale):')
+            for i, ratio in enumerate(self.ratios_scale):
+                print ('r_{} = {}'.format(i+1,ratio))
+            print ('\ncorrelations (scale):')
+            print (self.corr_ratio_scale)
+            print()
+
+        self.cov_ratio_tot_noscale = self.cov_ratio_exp + self.cov_ratio_extr + self.cov_ratio_pdf
+        self.cov_ratio_tot = self.cov_ratio_tot_noscale + self.cov_ratio_scale
+
+        ratios_values = np.array([ratio.n for ratio in self.ratios])
+        self.ratios_tot_noscale = uncertainties.correlated_values(ratios_values,self.cov_ratio_tot_noscale)
+        self.corr_ratio_tot_noscale = uncertainties.correlation_matrix(self.ratios_tot_noscale)
+        if not self.isClone:
+            print ('\nratios (tot, no scale):')
+            for i, ratio in enumerate(self.ratios_tot_noscale):
+                print ('r_{} = {}'.format(i+1,ratio))
+            print ('\ncorrelations (tot, no scale):')
+            print (self.corr_ratio_tot_noscale)
+            print()
+        
+        return
