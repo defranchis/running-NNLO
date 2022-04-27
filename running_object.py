@@ -467,7 +467,7 @@ class running_object():
 
         self.cov_mass_tot_noscale = cov_mass_exp + cov_mass_extr + cov_mass_pdf
         self.cov_mass_tot = self.cov_mass_tot_noscale + cov_mass_scale
-        self.masses_cov_tot_noscale = unc.correlated_values(self.mass_values,self.cov_mass_tot_noscale)
+        self.masses_tot_noscale = unc.correlated_values(self.mass_values,self.cov_mass_tot_noscale)
         
         self.ratio_values = np.array([ratio.n for ratio in self.ratios])
         self.ratios_tot_noscale = unc.correlated_values(self.ratio_values,self.cov_ratio_tot_noscale)
@@ -482,27 +482,30 @@ class running_object():
         
         return
 
-    def getTheoryRatio(self):
-        masses_evolved = np.array([conv.mtmu2mtmu(self.mass_values[self.ref_bin],self.scales[self.ref_bin],scale) for scale in self.scales])
-        return np.delete(masses_evolved/self.mass_values[self.ref_bin],self.ref_bin)
+    def getTheoryRatio(self,scales):
+        masses_evolved = np.array([conv.mtmu2mtmu(self.mass_values[self.ref_bin],self.scales[self.ref_bin],scale) for scale in scales])
+        return masses_evolved/self.mass_values[self.ref_bin]
 
-    def getRunningX(self,x):
-        return x*(self.getTheoryRatio()-1)+1
+    def getRunningX(self,x,scales):
+        return x*(self.getTheoryRatio(scales)-1)+1
 
     def computeChi2(self,x=1):
-        return np.matmul(self.ratio_values-self.getRunningX(x), np.matmul(np.linalg.inv(self.cov_ratio_tot_noscale),self.ratio_values-self.getRunningX(x)))
+        return np.matmul(self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin)),
+                         np.matmul(np.linalg.inv(self.cov_ratio_tot_noscale),self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin))))
 
     def estimateBestRunning(self):
 
         ndf = self.ratio_values.shape[0]
         self.chi2_QCD = self.computeChi2(1)
         self.chi2_noRunning = self.computeChi2(0)
+        self.prob_QCD = stats.chi2.sf(self.chi2_QCD,ndf)
+        self.prob_noRunning = stats.chi2.sf(self.chi2_noRunning,ndf)
         if not self.isClone:
             print ('\nQCD running (x=1):')
-            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_QCD,stats.chi2.sf(self.chi2_QCD,ndf)*100.))
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_QCD,self.prob_QCD*100.))
             print ('\nno running (x=0):')
-            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_noRunning,stats.chi2.sf(self.chi2_noRunning,ndf)*100.))
-            print('excluded at {:.1f}% C.L.'.format((1-stats.chi2.sf(self.chi2_noRunning,ndf))*100.))
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_noRunning,self.prob_noRunning*100.))
+            print('excluded at {:.1f}% C.L.'.format((1-self.prob_noRunning)*100.))
             print()
 
         minuit = Minuit(self.computeChi2, x=1)
@@ -510,11 +513,39 @@ class running_object():
 
         self.xFit = unc.ufloat(minuit.values['x'], minuit.errors['x'])
         self.chi2_xFit = self.computeChi2(minuit.values['x'])
+        self.prob_xFit = stats.chi2.sf(self.chi2_xFit,ndf-1)
 
         if not self.isClone:
             print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(minuit.values['x'], minuit.errors['x']))
-            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit,stats.chi2.sf(self.chi2_xFit,ndf-1)*100.))
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit,self.prob_xFit*100.))
             print()
+            
+            self.producePlotRatio()
+            
+        return
+
+    def producePlotRatio(self):
+        err_ratios = np.array([ratio.s for ratio in self.ratios_tot_noscale])
+        ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o')
+        ratio_points.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+
+        mu_scan = np.arange(self.scales[0],self.scales[-1],1)
+        curve, = plt.plot(mu_scan,self.getTheoryRatio(mu_scan))
+        curve.set_label('QCD running: nloops = {}, nflav = {}'.format(cnst.nloops,cnst.nflav))
+
+        plt.legend(loc='lower left')
+        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
+        plt.ylabel('NNLO running $m_\mathrm{t}(\mu) / m_\mathrm{t}(\mu_\mathrm{ref})$')
+        plt.title('QCD running NNLO')
+
+        plt.text(210,.9,'data/theory $\chi^2/ndf$ = {:.1f}'.format(self.chi2_QCD/(self.nBins-1)))
+        plt.text(210,.885,'probability = {:.1f} %'.format(self.prob_QCD*100.))
+
+        if not os.path.exists(plotdir):
+            os.makedirs(plotdir)
+
+        plt.savefig('{}/running.pdf'.format(plotdir))
+        plt.savefig('{}/running.png'.format(plotdir))
         
         return
 
@@ -556,7 +587,7 @@ class running_object():
 
     def producePlotDynamicMass(self):
 
-        err_mass = np.array([mass.s for mass in self.masses_cov_tot_noscale])
+        err_mass = np.array([mass.s for mass in self.masses_tot_noscale])
         mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
         mass_points.set_label('exctracted masses $m_\mathrm{t}(\mu_{k})$ at NNLO')
 
