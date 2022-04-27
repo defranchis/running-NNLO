@@ -2,8 +2,9 @@ import os, sys, copy, json
 import numpy as np
 import ROOT as rt
 import uncertainties as unc
-from iminuit import Minuit
+import iminuit
 from scipy import stats
+from scipy.optimize import fsolve
 from matplotlib import pyplot as plt
 
 import variables as var
@@ -11,6 +12,11 @@ import constants as cnst
 import mass_convert as conv
 
 rt.gROOT.SetBatch(True)
+
+# minuit settings
+global_tolerance = 1E-6
+global_strategy = 2
+global_errordef = 1
 
 plotdir = 'plots_running'
 
@@ -59,8 +65,8 @@ class running_object():
         tmp.isClone = tmp.isCloneMass or tmp.isCloneFull
         return tmp
         
-    def update(self):
-        self.d_mass_results = self.getAllMasses()
+    def update(self,pdf=0):
+        self.d_mass_results = self.getAllMasses(pdf)
         if not self.isCloneMass:
             self.estimateScaleUncertainties()
             self.estimateExtrapolationUncertainties()
@@ -185,18 +191,9 @@ class running_object():
                 raise RuntimeError('more than one mass point for PDF variations or no PDF variation at all')
             if list(self.d_PDFunc[pdf][mbin].keys())[0] != list(self.d_PDFunc[0][mbin].keys())[0]:
                 raise ValueError('different mass points used to evaluate PDF variation')
-            pdf_rel_uncert[mbin] = list(self.d_PDFunc[pdf][mbin].values())[0]/list(self.d_PDFunc[0][mbin].values())[0]
             
         obj_pdf = self.cloneMass()
-        for mbin in range(0,self.nBins):
-            for mass in obj_pdf.d_xsec_vs_mass[mbin].keys():
-                obj_pdf.d_xsec_vs_mass[mbin][mass] *= pdf_rel_uncert[mbin]
-
-        # here should also propagate the stat uncertainty correctly
-        # and make sure it's not double-counted for the central PDF (rather replaced)
-        # can also consider using only toys
-
-        obj_pdf.update()    
+        obj_pdf.update(pdf)
 
         return obj_pdf.d_mass_results
     
@@ -236,58 +233,73 @@ class running_object():
                         break
                 dd[b]=ddd
             d[pdf]=dd
-        print(d)
         return d
         
-    def getAllMasses(self):
+    def getAllMasses(self,pdf=0):
         d_mass_results = dict()
         for mbin in range(0,self.nBins):
-            result = self.getMassInBin(mbin)
+            result = self.getMassInBin(mbin,pdf)
             d_mass_results[mbin] = result
         return d_mass_results
 
-    def getMassInBin(self,mbin):
+
+    def fitQuadratic(self,x,a,b,c):
+        return a*x*x + b*x + c
+
+    def chi2QuadraticFit(self,a,b,c):
+        res = self.xsec_values_for_fit - self.fitQuadratic(self.masses_for_fit,a,b,c)
+        return np.matmul(res,np.matmul(np.linalg.inv(self.xsec_cov_for_fit),res))
+
+    def getMassInBin(self,mbin,pdf=0):
 
         od = 'plots_chi2_err'
         if not os.path.exists(od):
             os.makedirs(od)
 
-        mass_list = [float(m) for m in self.d_xsec_vs_mass[mbin]]
-        mass_list.sort()
+        masses = np.array([float(m) for m in self.d_xsec_vs_mass[mbin]])
+        masses.sort()
+        xsec = np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in masses])
+        err_xsec = np.array([self.d_numunc[mbin][str(m)] for m in masses])*xsec
+        cov = np.matmul(np.diag(err_xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(err_xsec)))
 
-        h_xsec = rt.TGraphErrors()
-        for i,mass in enumerate(mass_list):
-            h_xsec.SetPoint(i,mass,self.d_xsec_vs_mass[mbin][(str(mass))])
-            if str(mass) in self.d_numunc[mbin].keys():
-                h_xsec.SetPointError(i,0,self.d_xsec_vs_mass[mbin][(str(mass))]*self.d_numunc[mbin][str(mass)])
-            else:
-                raise RuntimeError('numerical uncertainties not found for bin {} and mass {}'.format(mbin+1,mass))
+        xsec_corr_values = np.array(unc.correlated_values(xsec,cov))
 
-        f = rt.TF1('f','pol2')
-        h_xsec.Fit(f,'Q')
+        # here PDF numerical uncertainties and their correlations are propagated
+        if pdf > 0 and mbin in self.d_PDFunc[pdf].keys():  #torm second part
+            m_ref = list(self.d_PDFunc[pdf][mbin].keys())[0]
+            xsec_pdf = float(self.d_PDFunc[pdf][mbin][m_ref])
+            err_xsec_pdf = float(self.d_numunc_PDFs[pdf][mbin][float(m_ref)])
+            xsec_pdf_wuncert = unc.ufloat(xsec_pdf,err_xsec_pdf*xsec_pdf)
+            i = list(masses).index(float(m_ref))
+            xsec_corr_values = xsec_corr_values/xsec_corr_values[i]*xsec_pdf_wuncert
+
+        self.masses_for_fit = masses
+        self.xsec_cov_for_fit = np.array(unc.covariance_matrix(xsec_corr_values))
+        self.xsec_values_for_fit = np.array([xsec.n for xsec in xsec_corr_values])
+
+        minuit = iminuit.Minuit(self.chi2QuadraticFit,a=0,b=-1,c=10)
+        minuit.errordef=global_errordef
+        minuit.strategy=global_strategy
+        minuit.tol=global_tolerance
+        minuit.migrad()
         
-        if not self.isClone:
+        if pdf == 0 and not self.isClone:
+            plot = plt.errorbar(self.masses_for_fit,self.xsec_values_for_fit,np.array([xsec.s for xsec in xsec_corr_values]))
+            m_scan = np.arange(masses[0],masses[-1],0.001)
+            curve, = plt.plot(m_scan,self.fitQuadratic(m_scan,minuit.values[0],minuit.values[1],minuit.values[2]))
+            plt.savefig('{}/xsec_bin_{}.png'.format(od,mbin+1))
+            plt.close()
+            
+        del self.masses_for_fit
+        del self.xsec_cov_for_fit
+        del self.xsec_values_for_fit
 
-            h_xsec.SetMarkerStyle(8)
-            h_xsec.SetTitle('bin {}; mt [GeV]; xsec [pb]'.format(mbin+1))
-            l_central = rt.TLine(mass_list[0],self.exp_xsec[mbin],mass_list[-1],self.exp_xsec[mbin])
-            l_up = rt.TLine(mass_list[0],self.exp_xsec[mbin]+self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]+self.exp_err[mbin])
-            l_down = rt.TLine(mass_list[0],self.exp_xsec[mbin]-self.exp_err[mbin],mass_list[-1],self.exp_xsec[mbin]-self.exp_err[mbin])
-
-            l_central.SetLineColor(rt.kBlue)
-            l_up.SetLineColor(rt.kGreen)
-            l_down.SetLineColor(rt.kGreen)
-
-            c = rt.TCanvas()
-            h_xsec.Draw('apl')
-            l_central.Draw('same')
-            l_up.Draw('same')
-            l_down.Draw('same')
-            c.SaveAs('{}/xsec_bin_{}.png'.format(od,mbin+1))
-    
-        m = f.GetX(self.exp_xsec[mbin],100,200)
-        err_up = f.GetX(self.exp_xsec[mbin]-self.exp_err[mbin],100,200) - m
-        err_down = m - f.GetX(self.exp_xsec[mbin]+self.exp_err[mbin],100,200)
+        f = lambda x: self.fitQuadratic(x,minuit.values[0],minuit.values[1],minuit.values[2])-self.exp_xsec[mbin]
+        f_up = lambda x: self.fitQuadratic(x,minuit.values[0],minuit.values[1],minuit.values[2])-self.exp_xsec[mbin]+self.exp_err[mbin]
+        f_down = lambda x: self.fitQuadratic(x,minuit.values[0],minuit.values[1],minuit.values[2])-self.exp_xsec[mbin]-self.exp_err[mbin]
+        m = list(set(fsolve(f,[masses[0],masses[-1]])))[0]
+        err_up = list(set(fsolve(f_up,[masses[0],masses[-1]])))[0] -m
+        err_down = m-list(set(fsolve(f_down,[masses[0],masses[-1]])))[0]
 
         result = self.fillMassResult(m,err_up,err_down)
         
@@ -527,9 +539,12 @@ class running_object():
             print('excluded at {:.1f}% C.L.'.format((1-self.prob_noRunning)*100.))
             print()
 
-        minuit = Minuit(self.computeChi2, x=1)
+        minuit = iminuit.Minuit(self.computeChi2, x=1)
+        minuit.errordef=global_errordef
+        minuit.strategy=global_strategy
+        minuit.tol=global_tolerance
         minuit.migrad()
-
+        
         self.xFit = unc.ufloat(minuit.values['x'], minuit.errors['x'])
         self.chi2_xFit = self.computeChi2(minuit.values['x'])
         self.prob_xFit = stats.chi2.sf(self.chi2_xFit,ndf-1)
@@ -567,6 +582,7 @@ class running_object():
 
         plt.savefig('{}/running.pdf'.format(plotdir))
         plt.savefig('{}/running.png'.format(plotdir))
+        plt.close()
         
         return
 
@@ -583,9 +599,12 @@ class running_object():
 
         ndf = self.mass_values.shape[0]-2
 
-        minuit = Minuit(self.chi2dynmass, mtmt=170, Lambda=1)
+        minuit = iminuit.Minuit(self.chi2dynmass, mtmt=170, Lambda=1)
+        minuit.errordef=global_errordef
+        minuit.strategy=global_strategy
+        minuit.tol=global_tolerance
         minuit.migrad()
-
+        
         mtmt = minuit.values['mtmt']
         err_mtmt = minuit.errors['mtmt']
         Lambda = minuit.values['Lambda']
@@ -630,5 +649,6 @@ class running_object():
 
         plt.savefig('{}/dynmass.pdf'.format(plotdir))
         plt.savefig('{}/dynmass.png'.format(plotdir))
-
+        plt.close()
+        
         return
