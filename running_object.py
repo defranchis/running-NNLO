@@ -48,7 +48,7 @@ class running_object():
 
     def cloneFull(self):
         if self.isCloneMass:
-            raise RuntimeError('cannot make full copy or partial copy')
+            raise RuntimeError('cannot make full copy of a partial copy')
         tmp = copy.deepcopy(self)
         tmp.isCloneFull = not tmp.isCloneMass
         tmp.isClone = tmp.isCloneMass or tmp.isCloneFull
