@@ -19,7 +19,7 @@ class mass_result():
 
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,ref_bin=2):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,ref_bin=2):
         
         self.isCloneMass = False
         self.isCloneFull = False
@@ -33,6 +33,7 @@ class running_object():
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
         self.nPDFs = 30
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
+        self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
         # to add once numerical uncertainties available 
         # self.addCentralPDFtoList()
         self.d_mass_results = self.getAllMasses()
@@ -220,6 +221,25 @@ class running_object():
             d[b]=dd
         return d
     
+    def readNumericalUncertPDFsJSON(self,filename):
+        f = open(filename)
+        data = json.load(f)
+
+        d = dict()
+        for pdf in range(0,self.nPDFs):
+            dd = dict()
+            for b in range(0,self.nBins):
+                ddd = dict()
+                for i, bb in enumerate(data['bin']):
+                    if bb-1 == b and data['pdf'][i] == str(pdf):
+                        ddd[data['mass'][i]] = data['relunc'][i]
+                        break
+                dd[b]=ddd
+            d[pdf]=dd
+        print(d)
+        sys.exit()
+        return d
+        
     def getAllMasses(self):
         d_mass_results = dict()
         for mbin in range(0,self.nBins):
@@ -535,12 +555,14 @@ class running_object():
 
         plt.legend(loc='lower left')
         plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
-        plt.ylabel('NNLO running $m_\mathrm{t}(\mu) / m_\mathrm{t}(\mu_\mathrm{ref})$')
-        plt.title('QCD running NNLO')
+        plt.ylabel('running $m_\mathrm{t}(\mu) / m_\mathrm{t}(\mu_\mathrm{ref})$')
+        plt.title('QCD running at NNLO')
 
         plt.text(210,.9,'data/theory $\chi^2/ndf$ = {:.1f}'.format(self.chi2_QCD/(self.nBins-1)))
-        plt.text(210,.885,'probability = {:.1f} %'.format(self.prob_QCD*100.))
-
+        plt.text(210,.885,'probability = {:.1f}%'.format(self.prob_QCD*100.))
+        plt.text(390,1.03,'ABMP16_5_nnlo PDF set')
+        plt.text(390,1.015,'$\mu_0 = \mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
+        
         if not os.path.exists(plotdir):
             os.makedirs(plotdir)
 
