@@ -34,8 +34,7 @@ class running_object():
         self.nPDFs = 30
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
-        # to add once numerical uncertainties available 
-        # self.addCentralPDFtoList()
+        self.addCentralPDFtoList()
         self.d_mass_results = self.getAllMasses()
         self.estimateScaleUncertainties()
         self.estimateExtrapolationUncertainties()
@@ -201,12 +200,13 @@ class running_object():
 
         return obj_pdf.d_mass_results
     
-    # to double check
     def addCentralPDFtoList(self):
         d = self.d_PDFunc[0]
         for i in d.keys():
             for mass in d[i].keys():
                 self.d_xsec_vs_mass[i][mass]=d[i][mass]
+                if self.d_numunc_PDFs[0][i] != dict(): #torm
+                    self.d_numunc[i][mass]=self.d_numunc_PDFs[0][i][float(mass)]
         return
     
     def readNumericalUncertJSON(self,filename):
