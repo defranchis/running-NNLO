@@ -237,7 +237,6 @@ class running_object():
                 dd[b]=ddd
             d[pdf]=dd
         print(d)
-        sys.exit()
         return d
         
     def getAllMasses(self):
