@@ -16,7 +16,9 @@ class running_object():
 
     def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,ref_bin=2):
         
-        self.isClone = False
+        self.isCloneMass = False
+        self.isCloneFull = False
+        self.isClone = self.isCloneFull or self.isCloneMass
         self.ref_bin = ref_bin-1
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.nBins = self.exp_xsec.shape[0]
@@ -37,20 +39,30 @@ class running_object():
         self.estimateBestRunning()
         self.fitDynamicMassGeneration()
         
-    def clone(self):
+    def cloneMass(self):
         tmp = copy.deepcopy(self)
-        tmp.isClone = True
+        tmp.isCloneMass = True
+        tmp.isCloneFull = False
+        tmp.isClone = tmp.isCloneMass or tmp.isCloneFull
         return tmp
 
-    def cloneIdentical(self):
-        return copy.deepcopy(self)
-    
+    def cloneFull(self):
+        if self.isCloneMass:
+            raise RuntimeError('cannot make full copy or partial copy')
+        tmp = copy.deepcopy(self)
+        tmp.isCloneFull = not tmp.isCloneMass
+        tmp.isClone = tmp.isCloneMass or tmp.isCloneFull
+        return tmp
+        
     def update(self):
         self.d_mass_results = self.getAllMasses()
-        if not self.isClone:
+        if not self.isCloneMass:
             self.estimateScaleUncertainties()
             self.estimateExtrapolationUncertainties()
+            self.estimatePDFuncertaities()
             self.estimateRatios()
+            self.estimateBestRunning()
+            self.fitDynamicMassGeneration()
         return
 
     def getExperimentalResults(self):
@@ -170,7 +182,7 @@ class running_object():
                 raise ValueError('different mass points used to evaluate PDF variation')
             pdf_rel_uncert[mbin] = list(self.d_PDFunc[pdf][mbin].values())[0]/list(self.d_PDFunc[0][mbin].values())[0]
             
-        obj_pdf = self.clone()
+        obj_pdf = self.cloneMass()
         for mbin in range(0,self.nBins):
             for mass in obj_pdf.d_xsec_vs_mass[mbin].keys():
                 obj_pdf.d_xsec_vs_mass[mbin][mass] *= pdf_rel_uncert[mbin]
@@ -203,7 +215,6 @@ class running_object():
             d[b]=dd
         return d
     
-
     def getAllMasses(self):
         d_mass_results = dict()
         for mbin in range(0,self.nBins):
@@ -213,7 +224,7 @@ class running_object():
 
     def getMassInBin(self,mbin):
 
-        od = 'plots_chi2_err' if not self.isClone else 'tmp_chi2'
+        od = 'plots_chi2_err'
         if not os.path.exists(od):
             os.makedirs(od)
 
@@ -267,10 +278,10 @@ class running_object():
         return result
 
     def estimateScaleUncertainties(self):
-        obj_up = self.clone()
+        obj_up = self.cloneMass()
         obj_up.d_xsec_vs_mass = self.d_xsec_vs_mass_scaleup
         obj_up.update()
-        obj_down = self.clone()
+        obj_down = self.cloneMass()
         obj_down.d_xsec_vs_mass = self.d_xsec_vs_mass_scaledown
         obj_down.update()
         self.addScaleUncertaintyToResult(obj_up,obj_down)
@@ -294,8 +305,8 @@ class running_object():
         extr_uncert_up = np.zeros(self.nBins)
         extr_uncert_down = np.zeros(self.nBins)
         for name in self.extr_up.keys():
-            obj_up = self.clone()
-            obj_down = self.clone()
+            obj_up = self.cloneMass()
+            obj_down = self.cloneMass()
             obj_up.exp_xsec += self.extr_up[name]
             obj_down.exp_xsec += self.extr_down[name]
             obj_up.update()
@@ -478,22 +489,26 @@ class running_object():
     def estimateBestRunning(self):
 
         ndf = self.ratio_values.shape[0]
-        print ('\nQCD running (x=1):')
-        chi2 = self.computeChi2(1)
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
-        print ('\nno running (x=0):')
-        chi2 = self.computeChi2(0)
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
-        print('excluded at {:.1f}% C.L.'.format((1-stats.chi2.sf(chi2,ndf))*100.))
-        print()
+        self.chi2_QCD = self.computeChi2(1)
+        self.chi2_noRunning = self.computeChi2(0)
+        if not self.isClone:
+            print ('\nQCD running (x=1):')
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_QCD,stats.chi2.sf(self.chi2_QCD,ndf)*100.))
+            print ('\nno running (x=0):')
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_noRunning,stats.chi2.sf(self.chi2_noRunning,ndf)*100.))
+            print('excluded at {:.1f}% C.L.'.format((1-stats.chi2.sf(self.chi2_noRunning,ndf))*100.))
+            print()
 
         minuit = Minuit(self.computeChi2, x=1)
         minuit.migrad()
 
-        print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(minuit.values['x'], minuit.errors['x']))
-        chi2 = self.computeChi2(minuit.values['x'])
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf-1)*100.))
-        print()
+        self.xFit = uncertainties.ufloat(minuit.values['x'], minuit.errors['x'])
+        self.chi2_xFit = self.computeChi2(minuit.values['x'])
+
+        if not self.isClone:
+            print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(minuit.values['x'], minuit.errors['x']))
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit,stats.chi2.sf(self.chi2_xFit,ndf-1)*100.))
+            print()
         
         return
 
@@ -518,12 +533,16 @@ class running_object():
         Lambda = minuit.values['Lambda']
         err_Lambda = minuit.errors['Lambda']
 
-        print('\nmt(mt) = {:.2f} +/- {:.2f} GeV'.format(mtmt,err_mtmt))
-        print('Lambda = {:.1f} +/- {:.1f} TeV'.format(Lambda,err_Lambda))
-        print()
-        chi2 = self.chi2dynmass(mtmt,Lambda)
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(chi2,stats.chi2.sf(chi2,ndf)*100.))
-        print()
+        self.mtmt_dynmass = uncertainties.ufloat(mtmt,err_mtmt)
+        self.Lambda_dynmass = uncertainties.ufloat(Lambda,err_Lambda)
+        
+        if not self.isClone:
+            print('\nmt(mt) = {:.2f} +/- {:.2f} GeV'.format(mtmt,err_mtmt))
+            print('Lambda = {:.1f} +/- {:.1f} TeV'.format(Lambda,err_Lambda))
+            print()
+            self.chi2_dynmass = self.chi2dynmass(mtmt,Lambda)
+            print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_dynmass,stats.chi2.sf(self.chi2_dynmass,ndf)*100.))
+            print()
         
         return
     
