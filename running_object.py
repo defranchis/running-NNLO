@@ -1,13 +1,18 @@
 import os, sys, copy, json
 import numpy as np
 import ROOT as rt
-import uncertainties
+import uncertainties as unc
 from iminuit import Minuit
 from scipy import stats
+from matplotlib import pyplot as plt
 
 import variables as var
 import constants as cnst
 import mass_convert as conv
+
+rt.gROOT.SetBatch(True)
+
+plotdir = 'plots_running'
 
 class mass_result():
     pass
@@ -260,7 +265,7 @@ class running_object():
             l_up.Draw('same')
             l_down.Draw('same')
             c.SaveAs('{}/xsec_bin_{}.png'.format(od,mbin+1))
-
+    
         m = f.GetX(self.exp_xsec[mbin],100,200)
         err_up = f.GetX(self.exp_xsec[mbin]-self.exp_err[mbin],100,200) - m
         err_down = m - f.GetX(self.exp_xsec[mbin]+self.exp_err[mbin],100,200)
@@ -404,11 +409,11 @@ class running_object():
         self.mass_values = values_mass
         uncert_mass_diag = np.diag(uncert_mass)
         cov_mass_exp = np.matmul(uncert_mass_diag,np.matmul(self.corr_matrix,uncert_mass_diag))
-        self.masses = np.array(uncertainties.correlated_values(values_mass,cov_mass_exp))
+        self.masses = np.array(unc.correlated_values(values_mass,cov_mass_exp))
         ratios = self.masses / self.masses[self.ref_bin]
         self.ratios = np.delete(ratios,self.ref_bin)
-        self.corr_ratio_exp = np.array(uncertainties.correlation_matrix(self.ratios))
-        self.cov_ratio_exp = np.array(uncertainties.covariance_matrix(self.ratios))
+        self.corr_ratio_exp = np.array(unc.correlation_matrix(self.ratios))
+        self.cov_ratio_exp = np.array(unc.covariance_matrix(self.ratios))
         if not self.isClone:
             print ('\nratios (exp):')
             for i, ratio in enumerate(self.ratios):
@@ -417,11 +422,11 @@ class running_object():
             print (self.corr_ratio_exp)
             print()
         cov_mass_extr = self.getExtrapolationCovarianceMasses()
-        masses_extr = np.array(uncertainties.correlated_values(values_mass,cov_mass_extr))
+        masses_extr = np.array(unc.correlated_values(values_mass,cov_mass_extr))
         ratios_extr = masses_extr / masses_extr[self.ref_bin]
         self.ratios_extr = np.delete(ratios_extr,self.ref_bin)
-        self.corr_ratio_extr = np.array(uncertainties.correlation_matrix(self.ratios_extr))
-        self.cov_ratio_extr = np.array(uncertainties.covariance_matrix(self.ratios_extr))
+        self.corr_ratio_extr = np.array(unc.correlation_matrix(self.ratios_extr))
+        self.cov_ratio_extr = np.array(unc.covariance_matrix(self.ratios_extr))
         if not self.isClone:
             print ('\nratios (extr):')
             for i, ratio in enumerate(self.ratios_extr):
@@ -430,11 +435,11 @@ class running_object():
             print (self.corr_ratio_extr)
             print()
         cov_mass_pdf = self.getPDFCovarianceMasses()
-        masses_pdf = np.array(uncertainties.correlated_values(values_mass,cov_mass_pdf))
+        masses_pdf = np.array(unc.correlated_values(values_mass,cov_mass_pdf))
         ratios_pdf = masses_pdf / masses_pdf[self.ref_bin]
         self.ratios_pdf = np.delete(ratios_pdf,self.ref_bin)
-        self.corr_ratio_pdf = np.array(uncertainties.correlation_matrix(self.ratios_pdf))
-        self.cov_ratio_pdf = np.array(uncertainties.covariance_matrix(self.ratios_pdf))
+        self.corr_ratio_pdf = np.array(unc.correlation_matrix(self.ratios_pdf))
+        self.cov_ratio_pdf = np.array(unc.covariance_matrix(self.ratios_pdf))
 
         if not self.isClone:
             print ('\nratios (pdf):')
@@ -444,11 +449,11 @@ class running_object():
             print (self.corr_ratio_pdf)
             print()
         cov_mass_scale = self.getScaleCovarianceMasses()
-        masses_scale = np.array(uncertainties.correlated_values(values_mass,cov_mass_scale))
+        masses_scale = np.array(unc.correlated_values(values_mass,cov_mass_scale))
         ratios_scale = masses_scale / masses_scale[self.ref_bin]
         self.ratios_scale = np.delete(ratios_scale,self.ref_bin)
-        self.corr_ratio_scale = np.array(uncertainties.correlation_matrix(self.ratios_scale))
-        self.cov_ratio_scale = np.array(uncertainties.covariance_matrix(self.ratios_scale))
+        self.corr_ratio_scale = np.array(unc.correlation_matrix(self.ratios_scale))
+        self.cov_ratio_scale = np.array(unc.covariance_matrix(self.ratios_scale))
         if not self.isClone:
             print ('\nratios (scale):')
             for i, ratio in enumerate(self.ratios_scale):
@@ -462,10 +467,11 @@ class running_object():
 
         self.cov_mass_tot_noscale = cov_mass_exp + cov_mass_extr + cov_mass_pdf
         self.cov_mass_tot = self.cov_mass_tot_noscale + cov_mass_scale
+        self.masses_cov_tot_noscale = unc.correlated_values(self.mass_values,self.cov_mass_tot_noscale)
         
         self.ratio_values = np.array([ratio.n for ratio in self.ratios])
-        self.ratios_tot_noscale = uncertainties.correlated_values(self.ratio_values,self.cov_ratio_tot_noscale)
-        self.corr_ratio_tot_noscale = uncertainties.correlation_matrix(self.ratios_tot_noscale)
+        self.ratios_tot_noscale = unc.correlated_values(self.ratio_values,self.cov_ratio_tot_noscale)
+        self.corr_ratio_tot_noscale = unc.correlation_matrix(self.ratios_tot_noscale)
         if not self.isClone:
             print ('\nratios (tot, no scale):')
             for i, ratio in enumerate(self.ratios_tot_noscale):
@@ -502,7 +508,7 @@ class running_object():
         minuit = Minuit(self.computeChi2, x=1)
         minuit.migrad()
 
-        self.xFit = uncertainties.ufloat(minuit.values['x'], minuit.errors['x'])
+        self.xFit = unc.ufloat(minuit.values['x'], minuit.errors['x'])
         self.chi2_xFit = self.computeChi2(minuit.values['x'])
 
         if not self.isClone:
@@ -533,8 +539,8 @@ class running_object():
         Lambda = minuit.values['Lambda']
         err_Lambda = minuit.errors['Lambda']
 
-        self.mtmt_dynmass = uncertainties.ufloat(mtmt,err_mtmt)
-        self.Lambda_dynmass = uncertainties.ufloat(Lambda,err_Lambda)
+        self.mtmt_dynmass = unc.ufloat(mtmt,err_mtmt)
+        self.Lambda_dynmass = unc.ufloat(Lambda,err_Lambda)
         
         if not self.isClone:
             print('\nmt(mt) = {:.2f} +/- {:.2f} GeV'.format(mtmt,err_mtmt))
@@ -543,6 +549,34 @@ class running_object():
             self.chi2_dynmass = self.chi2dynmass(mtmt,Lambda)
             print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_dynmass,stats.chi2.sf(self.chi2_dynmass,ndf)*100.))
             print()
-        
+
+            self.producePlotDynamicMass()
+            
         return
-    
+
+    def producePlotDynamicMass(self):
+
+        err_mass = np.array([mass.s for mass in self.masses_cov_tot_noscale])
+        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
+        mass_points.set_label('exctracted masses $m_\mathrm{t}(\mu_{k})$ at NNLO')
+
+        mu_scan = np.arange(self.scales[0],self.scales[-1],1)
+        curve, = plt.plot(mu_scan,self.dynmass(mu_scan,self.mtmt_dynmass.n,self.Lambda_dynmass.n))
+        curve.set_label('technicolor: $m_\mathrm{t}(m_\mathrm{t})}$ = '+'{:.1f}'.format(self.mtmt_dynmass.n) +' GeV, $\Lambda$ = '+'{:.1f}'.format(self.Lambda_dynmass.n)+' TeV')
+
+        plt.legend(loc='lower left')
+        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
+        plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
+        plt.title('dynamic mass generation')
+
+        plt.text(215,142,'best-fit values:')
+        plt.text(215,140,'$\Lambda = {:.1f} \pm {:.1f}$ TeV'.format(self.Lambda_dynmass.n,self.Lambda_dynmass.s), fontsize=11)
+        plt.text(215,138,'$m_\mathrm{t}(m_\mathrm{t})'+' = {:.1f} \pm {:.1f}$ GeV'.format(self.mtmt_dynmass.n,self.mtmt_dynmass.s), fontsize=11)
+
+        if not os.path.exists(plotdir):
+            os.makedirs(plotdir)
+
+        plt.savefig('{}/dynmass.pdf'.format(plotdir))
+        plt.savefig('{}/dynmass.png'.format(plotdir))
+
+        return
