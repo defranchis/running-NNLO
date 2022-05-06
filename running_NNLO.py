@@ -1,5 +1,5 @@
 
-from running_object import running_object
+from chi2_running_object import running_object
 
 dat_dir = 'NNLO_dat'
 infile_xsec_mass = '{}/mass_points.dat'.format(dat_dir)
