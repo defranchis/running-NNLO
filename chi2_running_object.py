@@ -128,8 +128,7 @@ class running_object():
         for i in d.keys():
             for mass in d[i].keys():
                 self.d_xsec_vs_mass[i][mass]=d[i][mass]
-                if self.d_numunc_PDFs[0][i] != dict(): #torm
-                    self.d_numunc[i][mass]=self.d_numunc_PDFs[0][i][float(mass)]
+                self.d_numunc[i][mass]=self.d_numunc_PDFs[0][i][float(mass)]
         return
     
     def readNumericalUncertJSON(self,filename):
@@ -145,13 +144,13 @@ class running_object():
         return d
     
     def readNumericalUncertPDFsJSON(self,filename):
-        f = open(filename)
-        data = json.load(f)
-
         d = dict()
         for pdf in range(0,self.nPDFs):
             dd = dict()
             for b in range(0,self.nBins):
+                f = open(filename.format(b+1))
+                data = json.load(f)
+                f.close()
                 ddd = dict()
                 for i, bb in enumerate(data['bin']):
                     if bb-1 == b and data['pdf'][i] == str(pdf):
