@@ -168,18 +168,18 @@ class running_object():
         return np.matmul(res,np.matmul(np.linalg.inv(self.xsec_cov_for_fit),res))
     
 
-    def getDependencies(self,MCstat_nuisances_bin):
+    def getDependencies(self,MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs):
         a_s = np.empty(self.nBins)
         b_s = np.empty(self.nBins)
         c_s = np.empty(self.nBins)
         for mbin in range(0,self.nBins):
-            dep_params = self.getDependencyBin(mbin,MCstat_nuisances_bin[mbin])
+            dep_params = self.getDependencyBin(mbin,MCstat_nuisances_bin[mbin],MCstat_nuisances_PDFs_bin[mbin],nuisances_PDFs)
             a_s[mbin]=dep_params[0]
             b_s[mbin]=dep_params[1]
             c_s[mbin]=dep_params[2]
         return a_s, b_s, c_s
 
-    def getDependencyBin(self,mbin,MCstat_nuisances_bin):
+    def getDependencyBin(self,mbin,MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs):
         masses = np.array([float(m) for m in self.d_xsec_vs_mass[mbin]])
         masses.sort()
         rel_err_xsec = np.array([self.d_numunc[mbin][str(m)] for m in masses])
@@ -188,16 +188,19 @@ class running_object():
 
         xsec_corr_values = np.array(unc.correlated_values(xsec,cov))
 
-        # same concept, but to be updated depending on PDF nuisances
-        # # here PDF numerical uncertainties and their correlations are propagated
-        # if pdf > 0 and mbin in self.d_PDFunc[pdf].keys():  #torm second part
-        #     m_ref = list(self.d_PDFunc[pdf][mbin].keys())[0]
-        #     xsec_pdf = float(self.d_PDFunc[pdf][mbin][m_ref])
-        #     err_xsec_pdf = float(self.d_numunc_PDFs[pdf][mbin][float(m_ref)])
-        #     xsec_pdf_wuncert = unc.ufloat(xsec_pdf,err_xsec_pdf*xsec_pdf)
-        #     i = list(masses).index(float(m_ref))
-        #     xsec_corr_values = xsec_corr_values/xsec_corr_values[i]*xsec_pdf_wuncert
+        m_ref = list(self.d_PDFunc[1][mbin].keys())[0]
+        xsec_PDFs = [float(self.d_PDFunc[pdf][mbin][m_ref]) for pdf in range(1,self.nPDFs)]
+        rel_err_xsec_PDFs = [float(self.d_numunc_PDFs[pdf][mbin][float(m_ref)]) for pdf in range(1,self.nPDFs)]
 
+        xsec_PDFs = np.array(xsec_PDFs)*(1+MCstat_nuisances_PDFs_bin*np.array(rel_err_xsec_PDFs)) # MC stat correction PDF
+        xsec_PDFs_wunc = np.array([unc.ufloat(xsec_PDFs[i],xsec_PDFs[i]*rel_err_xsec_PDFs[i]) for i in range(0,len(rel_err_xsec_PDFs))])
+
+        ref = list(masses).index(float(m_ref))
+        rel_variations = nuisances_PDFs * (xsec_PDFs_wunc/xsec_corr_values[ref]-1) +1 # relative PDF variations
+
+        for pdf in range(0,self.nPDFs-1):
+            xsec_corr_values = xsec_corr_values * rel_variations[pdf]
+        
         self.masses_for_fit = masses
         self.xsec_cov_for_fit = np.array(unc.covariance_matrix(xsec_corr_values))
         self.xsec_values_for_fit = np.array([xsec.n for xsec in xsec_corr_values])
@@ -216,21 +219,23 @@ class running_object():
         
     def globalChi2(self,params):
         masses = params[0:self.nBins]
-        MCstat_nuisances = params[self.nBins:]
-        MCstat_nuisances_bin = [MCstat_nuisances[self.nMassPoints[i-1]:self.nMassPoints[i-1]+self.nMassPoints[i]] for i in range(0,self.nBins)]
-        a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin)
+        all_nuisances = params[self.nBins:]
+        MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints[i-1]:self.nBins+self.nMassPoints[i-1]+self.nMassPoints[i]] for i in range(0,self.nBins)]
+        MCstat_nuisances_PDFs_bin = [params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
+        nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
+        a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
         cov_tot = self.exp_cov + self.extr_cov # add extrapolation
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(cov_tot),res_array))
-        return chi2 + sum(MCstat_nuisances**2)
+        return chi2 + sum(all_nuisances**2)
 
     def doFit(self):
         params = np.ones(self.nBins)
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
         self.nMassPoints.append(0) # useful in globalChi2
-        MCstat_nuisances = np.zeros(sum(self.nMassPoints)) # MC stat parameters (nominal)
-        params = np.append(params,MCstat_nuisances)
+        all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*5) # MC stat parameters (nominal+PDFs) and PDFs
+        params = np.append(params,all_nuisances)
         
         minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=global_errordef
