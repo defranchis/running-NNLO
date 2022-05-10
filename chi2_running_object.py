@@ -16,9 +16,6 @@ from datetime import datetime
 rt.gROOT.SetBatch(True)
 
 # minuit settings
-global_tolerance = 1E-6
-global_strategy = 1
-global_errordef = 1
 
 plotdir = 'plots_running'
 
@@ -210,8 +207,7 @@ class running_object():
         nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
         a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
-        cov_tot = self.exp_cov + self.extr_cov # add extrapolation
-        chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(cov_tot),res_array))
+        chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(self.cov_tot),res_array))
         return chi2 + sum(all_nuisances**2)
 
     def defineUsefulVariablesForFit(self):
@@ -221,15 +217,17 @@ class running_object():
         self.rel_err_xsec_bin = [np.array([self.d_numunc[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
         self.xsec_bin = [np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
 
-        m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)] #fromhere
+        m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)]
         self.xsec_PDFs_bin = [np.array([float(self.d_PDFunc[pdf][mbin][m_ref_bin[mbin]]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
         self.rel_err_xsec_PDFs_bin = [np.array([float(self.d_numunc_PDFs[pdf][mbin][float(m_ref_bin[mbin])]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
         self.ref_mass_bin = [list(self.masses_bin[mbin]).index(float(m_ref_bin[mbin])) for mbin in range(0,self.nBins)]
 
         self.minuit_dep = iminuit.Minuit(self.chi2QuadraticFit,a=0,b=-1,c=10)
-        self.minuit_dep.errordef=global_errordef
-        # self.minuit_dep.strategy=global_strategy
-        # self.minuit_dep.tol=global_tolerance
+        self.minuit_dep.errordef=1
+        self.minuit_dep.strategy=2
+        self.minuit_dep.tol=1E-6
+
+        self.cov_tot = self.exp_cov + self.extr_cov
         
         return
     
@@ -244,15 +242,14 @@ class running_object():
         self.defineUsefulVariablesForFit()
         
         minuit = iminuit.Minuit(self.globalChi2,params)
-        minuit.errordef=global_errordef
+        minuit.errordef=1
         # minuit.strategy=global_strategy
         # minuit.tol=global_tolerance
 
         pre = datetime.now()
         minuit.migrad() # do fit
-        post = datetime.now()
 
-        print ('\nfit took', post-pre)
+        print ('\nfit took', datetime.now()-pre)
         print()
         print(minuit.values)
         print()
