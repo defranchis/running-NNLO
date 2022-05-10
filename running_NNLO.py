@@ -6,10 +6,11 @@ infile_xsec_mass = '{}/mass_points.dat'.format(dat_dir)
 infile_num_unc = '{}/rel_uncert.json'.format(dat_dir)
 inpath_PDFs = '{}/PDFs/pdf_variation_{}.dat'.format(dat_dir,'{}')
 infile_num_unc_PDFs = '{}/PDFs/rel_uncert_bin{}.json'.format(dat_dir,'{}')
+od = 'fit_results'
 
 def main():
 
-    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs)
+    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)
     
     return
 

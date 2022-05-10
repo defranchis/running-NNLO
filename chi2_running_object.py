@@ -23,9 +23,9 @@ plotdir = 'plots_running'
 
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,ref_bin=2):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.'):
         
-        self.ref_bin = ref_bin-1
+        self.od = output_dir
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
         self.nBins = self.exp_xsec.shape[0]
@@ -275,9 +275,17 @@ class running_object():
         for i in range (0,self.nBins):
             for j in range (0,self.nBins):
                 cov[i][j] = minuit.covariance[i][j]
-        results = [minuit.values[i] for i in range(0,self.nBins)]
-        np.save('mass_results',results)
-        np.save('mass_covariance',cov)
+        par = np.array(minuit.values)
+        err = np.array(minuit.errors)
+        
+        if not os.path.exists(self.od):
+            os.makedirs(self.od)
+
+        np.save('{}/mass_results'.format(self.od),par[:self.nBins])
+        np.save('{}/mass_covariance'.format(self.od),cov)
+        np.save('{}/par_values'.format(self.od),par)
+        np.save('{}/par_errors'.format(self.od),err)
+        
         
         print()
         print(minuit.values)
