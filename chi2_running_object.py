@@ -13,6 +13,8 @@ import mass_convert as conv
 
 from datetime import datetime
 
+import math
+
 rt.gROOT.SetBatch(True)
 
 # minuit settings
@@ -242,14 +244,41 @@ class running_object():
         self.defineUsefulVariablesForFit()
         
         minuit = iminuit.Minuit(self.globalChi2,params)
+        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
         minuit.errordef=1
         # minuit.strategy=global_strategy
         # minuit.tol=global_tolerance
 
         pre = datetime.now()
-        minuit.migrad() # do fit
+        
+        minuit.limits = [(-1*math.inf,math.inf) if i<self.nBins else (-1,1) for i, _ in enumerate(params)]
+        minuit.migrad() # do first fit (only masses)
+        
+        print('\nfirst fit took {}\n'.format(datetime.now()-pre))
+        
+        minuit.fixed = [False for _ in params]
+        minuit.limits = [(minuit.values[i]-.1*minuit.errors[i],minuit.values[i]+.1*minuit.errors[i]) if i<self.nBins else (-.3,.3) for i, _ in enumerate(params)]
+        minuit.migrad() # second fit, with constraints
 
-        print ('\nfit took', datetime.now()-pre)
+        print('second fit took {}\n'.format(datetime.now()-pre))
+
+        pre_final = datetime.now()
+        minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+        minuit.strategy = 2
+        minuit.tol = 1E-6
+        minuit.migrad() # final fit
+        
+        print ('last step took {}\n'.format(datetime.now()-pre_final))        
+        print ('total fit took {}\n'.format(datetime.now()-pre))
+
+        cov = np.empty((self.nBins,self.nBins))
+        for i in range (0,self.nBins):
+            for j in range (0,self.nBins):
+                cov[i][j] = minuit.covariance[i][j]
+        results = [minuit.values[i] for i in range(0,self.nBins)]
+        np.save('mass_results',results)
+        np.save('mass_covariance',cov)
+        
         print()
         print(minuit.values)
         print()
