@@ -180,42 +180,27 @@ class running_object():
         return a_s, b_s, c_s
 
     def getDependencyBin(self,mbin,MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs):
-        masses = np.array([float(m) for m in self.d_xsec_vs_mass[mbin]])
-        masses.sort()
-        rel_err_xsec = np.array([self.d_numunc[mbin][str(m)] for m in masses])
-        xsec = np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in masses]) * (1+MCstat_nuisances_bin*rel_err_xsec) # MC stat correction
-        cov = np.matmul(np.diag(rel_err_xsec*xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(rel_err_xsec*xsec)))
-
+        xsec = self.xsec_bin[mbin] * (1+MCstat_nuisances_bin*self.rel_err_xsec_bin[mbin]) # MC stat correction
+        cov = np.matmul(np.diag(self.rel_err_xsec_bin[mbin]*xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(self.rel_err_xsec_bin[mbin]*xsec)))
         xsec_corr_values = np.array(unc.correlated_values(xsec,cov))
 
-        m_ref = list(self.d_PDFunc[1][mbin].keys())[0]
-        xsec_PDFs = [float(self.d_PDFunc[pdf][mbin][m_ref]) for pdf in range(1,self.nPDFs)]
-        rel_err_xsec_PDFs = [float(self.d_numunc_PDFs[pdf][mbin][float(m_ref)]) for pdf in range(1,self.nPDFs)]
+        xsec_PDFs = self.xsec_PDFs_bin[mbin]*(1+MCstat_nuisances_PDFs_bin*self.rel_err_xsec_PDFs_bin[mbin]) # MC stat correction PDF
+        xsec_PDFs_wunc = np.array([unc.ufloat(xsec_PDFs[i],xsec_PDFs[i]*self.rel_err_xsec_PDFs_bin[mbin][i]) for i in range(0,len(self.rel_err_xsec_PDFs_bin[mbin]))])
 
-        xsec_PDFs = np.array(xsec_PDFs)*(1+MCstat_nuisances_PDFs_bin*np.array(rel_err_xsec_PDFs)) # MC stat correction PDF
-        xsec_PDFs_wunc = np.array([unc.ufloat(xsec_PDFs[i],xsec_PDFs[i]*rel_err_xsec_PDFs[i]) for i in range(0,len(rel_err_xsec_PDFs))])
+        rel_variations = nuisances_PDFs * (xsec_PDFs_wunc/xsec_corr_values[self.ref_mass_bin[mbin]]-1) +1 # relative PDF variations
+        xsec_corr_values = xsec_corr_values * np.prod(rel_variations)
 
-        ref = list(masses).index(float(m_ref))
-        rel_variations = nuisances_PDFs * (xsec_PDFs_wunc/xsec_corr_values[ref]-1) +1 # relative PDF variations
-
-        for pdf in range(0,self.nPDFs-1):
-            xsec_corr_values = xsec_corr_values * rel_variations[pdf]
-        
-        self.masses_for_fit = masses
+        self.masses_for_fit = self.masses_bin[mbin]
         self.xsec_cov_for_fit = np.array(unc.covariance_matrix(xsec_corr_values))
         self.xsec_values_for_fit = np.array([xsec.n for xsec in xsec_corr_values])
 
-        minuit = iminuit.Minuit(self.chi2QuadraticFit,a=0,b=-1,c=10)
-        minuit.errordef=global_errordef
-        minuit.strategy=global_strategy
-        minuit.tol=global_tolerance
-        minuit.migrad()
+        self.minuit_dep.migrad()
 
         del self.masses_for_fit
         del self.xsec_cov_for_fit
         del self.xsec_values_for_fit
         
-        return np.array(minuit.values)
+        return np.array(self.minuit_dep.values)
         
     def globalChi2(self,params):
         masses = params[0:self.nBins]
@@ -229,6 +214,25 @@ class running_object():
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(cov_tot),res_array))
         return chi2 + sum(all_nuisances**2)
 
+    def defineUsefulVariablesForFit(self):
+        self.masses_bin = [np.array([float(m) for m in self.d_xsec_vs_mass[mbin]]) for mbin in range(0,self.nBins)]
+        for m in self.masses_bin:
+            m.sort()
+        self.rel_err_xsec_bin = [np.array([self.d_numunc[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
+        self.xsec_bin = [np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
+
+        m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)] #fromhere
+        self.xsec_PDFs_bin = [np.array([float(self.d_PDFunc[pdf][mbin][m_ref_bin[mbin]]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
+        self.rel_err_xsec_PDFs_bin = [np.array([float(self.d_numunc_PDFs[pdf][mbin][float(m_ref_bin[mbin])]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
+        self.ref_mass_bin = [list(self.masses_bin[mbin]).index(float(m_ref_bin[mbin])) for mbin in range(0,self.nBins)]
+
+        self.minuit_dep = iminuit.Minuit(self.chi2QuadraticFit,a=0,b=-1,c=10)
+        self.minuit_dep.errordef=global_errordef
+        # self.minuit_dep.strategy=global_strategy
+        # self.minuit_dep.tol=global_tolerance
+        
+        return
+    
     def doFit(self):
         params = np.ones(self.nBins)
         params *= 160 # initialise masses
@@ -236,11 +240,13 @@ class running_object():
         self.nMassPoints.append(0) # useful in globalChi2
         all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*5) # MC stat parameters (nominal+PDFs) and PDFs
         params = np.append(params,all_nuisances)
+
+        self.defineUsefulVariablesForFit()
         
         minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=global_errordef
-        minuit.strategy=global_strategy
-        minuit.tol=global_tolerance
+        # minuit.strategy=global_strategy
+        # minuit.tol=global_tolerance
 
         pre = datetime.now()
         minuit.migrad() # do fit
