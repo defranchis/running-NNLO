@@ -11,11 +11,13 @@ import variables as var
 import constants as cnst
 import mass_convert as conv
 
+from datetime import datetime
+
 rt.gROOT.SetBatch(True)
 
 # minuit settings
 global_tolerance = 1E-6
-global_strategy = 2
+global_strategy = 1
 global_errordef = 1
 
 plotdir = 'plots_running'
@@ -167,23 +169,23 @@ class running_object():
         return np.matmul(res,np.matmul(np.linalg.inv(self.xsec_cov_for_fit),res))
     
 
-    def getDependencies(self):
+    def getDependencies(self,MCstat_nuisances_bin):
         a_s = np.empty(self.nBins)
         b_s = np.empty(self.nBins)
         c_s = np.empty(self.nBins)
         for mbin in range(0,self.nBins):
-            dep_params = self.getDependencyBin(mbin)
+            dep_params = self.getDependencyBin(mbin,MCstat_nuisances_bin[mbin])
             a_s[mbin]=dep_params[0]
             b_s[mbin]=dep_params[1]
             c_s[mbin]=dep_params[2]
         return a_s, b_s, c_s
 
-    def getDependencyBin(self,mbin):
+    def getDependencyBin(self,mbin,MCstat_nuisances_bin):
         masses = np.array([float(m) for m in self.d_xsec_vs_mass[mbin]])
         masses.sort()
-        xsec = np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in masses])
-        err_xsec = np.array([self.d_numunc[mbin][str(m)] for m in masses])*xsec
-        cov = np.matmul(np.diag(err_xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(err_xsec)))
+        rel_err_xsec = np.array([self.d_numunc[mbin][str(m)] for m in masses])
+        xsec = np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in masses]) * (1+MCstat_nuisances_bin*rel_err_xsec) # MC stat correction
+        cov = np.matmul(np.diag(rel_err_xsec*xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(rel_err_xsec*xsec)))
 
         xsec_corr_values = np.array(unc.correlated_values(xsec,cov))
 
@@ -213,20 +215,36 @@ class running_object():
         
         return np.array(minuit.values)
         
-    def globalChi2(self,m1,m2,m3,m4):
-        masses = np.array([m1,m2,m3,m4])
-        a_s,b_s,c_s = self.getDependencies()
+    def globalChi2(self,params):
+        masses = params[0:self.nBins]
+        MCstat_nuisances = params[self.nBins:]
+        MCstat_nuisances_bin = [MCstat_nuisances[self.nMassPoints[i-1]:self.nMassPoints[i-1]+self.nMassPoints[i]] for i in range(0,self.nBins)]
+        a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
         cov_tot = self.exp_cov + self.extr_cov # add extrapolation
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(cov_tot),res_array))
-        return chi2
+        return chi2 + sum(MCstat_nuisances**2)
 
     def doFit(self):
-        minuit = iminuit.Minuit(self.globalChi2,m1=160,m2=160,m3=160,m4=160)
+        params = np.ones(self.nBins)
+        params *= 160 # initialise masses
+        self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
+        self.nMassPoints.append(0) # useful in globalChi2
+        MCstat_nuisances = np.zeros(sum(self.nMassPoints)) # MC stat parameters (nominal)
+        params = np.append(params,MCstat_nuisances)
+        
+        minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=global_errordef
         minuit.strategy=global_strategy
         minuit.tol=global_tolerance
-        minuit.migrad()
+
+        pre = datetime.now()
+        minuit.migrad() # do fit
+        post = datetime.now()
+
+        print ('\nfit took', post-pre)
+        print()
         print(minuit.values)
+        print()
         print(minuit.errors)
         return
