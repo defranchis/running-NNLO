@@ -245,15 +245,65 @@ class running_object():
         minuit.migrad() # second fit, with constraints and all nuisances
                 
         print('second fit took {}\n'.format(datetime.now()-pre))
+
+        minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+        minuit.migrad() # fit with all parameters
+
+        print('full fit, reduced precision')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+
+        odRP = self.od+'_RP' # reduced precision
+        if not os.path.exists(odRP):
+            os.makedirs(odRP)
+
+        cov = np.array(minuit.covariance)
+        par = np.array(minuit.values)
+        err = np.array(minuit.errors)
+
+        np.save('{}/mass_results'.format(odRP),par[:self.nBins])
+        np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
+        np.save('{}/par_values'.format(odRP),par)
+        np.save('{}/par_errors'.format(odRP),err)
+        np.save('{}/full_covariance'.format(odRP),cov)
         
+        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+        minuit.migrad() # fit with only exp
+        
+        print('\nonly exp')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err_exp = np.array(minuit.errors)[:self.nBins]
+        
+        minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
+        minuit.migrad() # fit with only exp and PDF
+
+
+        print('\nonly exp and PDF')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err = np.array(minuit.errors)[:self.nBins]
+        print((m_err**2-m_err_exp**2)**.5)
+        
+        minuit.fixed = [False if i<len(params)-self.nPDFs else True for i, _ in enumerate(params)]
+        minuit.migrad() # only exp and num
+
+        print('\nonly exp and num')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err = np.array(minuit.errors)[:self.nBins]
+        print((m_err**2-m_err_exp**2)**.5)
+
+                
         pre_final = datetime.now()
         minuit.fixed = [False for _ in params]
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+        
         minuit.strategy = 2
         minuit.tol = 1E-6
         minuit.migrad() # final fit
         
-        print ('last step took {}\n'.format(datetime.now()-pre_final))        
+        print ('\nlast step took {}'.format(datetime.now()-pre_final))        
         print ('total fit took {}\n'.format(datetime.now()-pre))
 
         cov = np.array(minuit.covariance)
