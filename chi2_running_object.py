@@ -1,23 +1,9 @@
-import os, sys, copy, json
+
+import os, sys, json, math, iminuit
 import numpy as np
-import ROOT as rt
-import uncertainties as unc
-import iminuit
-from scipy import stats
-from scipy.optimize import fsolve
-from matplotlib import pyplot as plt
-
-import variables as var
-import constants as cnst
-import mass_convert as conv
-
 from datetime import datetime
-
-import math
-
-rt.gROOT.SetBatch(True)
-
-# minuit settings
+import uncertainties as unc
+import variables as var
 
 plotdir = 'plots_running'
 
@@ -29,7 +15,6 @@ class running_object():
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
         self.nBins = self.exp_xsec.shape[0]
-        self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.extr_cov = self.getExtrapolationImpacts()
         self.d_xsec_vs_mass, self.d_xsec_vs_mass_scaleup, self.d_xsec_vs_mass_scaledown = self.readAllXsecVsMass(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
