@@ -238,30 +238,36 @@ class running_object():
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
         self.nMassPoints.append(0) # useful in globalChi2
-        all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*5) # MC stat parameters (nominal+PDFs) and PDFs
+        all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
         params = np.append(params,all_nuisances)
 
         self.defineUsefulVariablesForFit()
         
         minuit = iminuit.Minuit(self.globalChi2,params)
-        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
         minuit.errordef=1
-        # minuit.strategy=global_strategy
-        # minuit.tol=global_tolerance
 
+        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+        minuit.limits = [(-1*math.inf,math.inf) if i<self.nBins else (-1,1) for i, _ in enumerate(params)]
+        
         pre = datetime.now()
         
-        minuit.limits = [(-1*math.inf,math.inf) if i<self.nBins else (-1,1) for i, _ in enumerate(params)]
         minuit.migrad() # do first fit (only masses)
         
         print('\nfirst fit took {}\n'.format(datetime.now()-pre))
         
         minuit.fixed = [False for _ in params]
-        minuit.limits = [(minuit.values[i]-.1*minuit.errors[i],minuit.values[i]+.1*minuit.errors[i]) if i<self.nBins else (-.3,.3) for i, _ in enumerate(params)]
-        minuit.migrad() # second fit, with constraints
+        minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.nBins else (-.3,.3) for i, _ in enumerate(params)]
+        minuit.migrad() # second fit, with constraints and all nuisances
+        
+        print()
+        print(np.array(minuit.values)[:self.nBins])
+        print()
+        print(np.array(minuit.errors)[:self.nBins])
+        print()
 
+        
         print('second fit took {}\n'.format(datetime.now()-pre))
-
+        
         pre_final = datetime.now()
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
         minuit.strategy = 2
@@ -288,7 +294,8 @@ class running_object():
         
         
         print()
-        print(minuit.values)
+        print(np.array(minuit.values)[:self.nBins])
         print()
-        print(minuit.errors)
+        print(np.array(minuit.errors)[:self.nBins])
+        
         return
