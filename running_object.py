@@ -217,15 +217,14 @@ class running_object():
                 dd[str(data['mass'][i])] = data['relunc'][i]
             d[b]=dd
         return d
-    
     def readNumericalUncertPDFsJSON(self,filename):
-        f = open(filename)
-        data = json.load(f)
-
         d = dict()
         for pdf in range(0,self.nPDFs):
             dd = dict()
             for b in range(0,self.nBins):
+                f = open(filename.format(b+1))
+                data = json.load(f)
+                f.close()
                 ddd = dict()
                 for i, bb in enumerate(data['bin']):
                     if bb-1 == b and data['pdf'][i] == str(pdf):
@@ -234,6 +233,23 @@ class running_object():
                 dd[b]=ddd
             d[pdf]=dd
         return d
+    
+    # def readNumericalUncertPDFsJSON(self,filename):
+    #     f = open(filename)
+    #     data = json.load(f)
+
+    #     d = dict()
+    #     for pdf in range(0,self.nPDFs):
+    #         dd = dict()
+    #         for b in range(0,self.nBins):
+    #             ddd = dict()
+    #             for i, bb in enumerate(data['bin']):
+    #                 if bb-1 == b and data['pdf'][i] == str(pdf):
+    #                     ddd[data['mass'][i]] = data['relunc'][i]
+    #                     break
+    #             dd[b]=ddd
+    #         d[pdf]=dd
+    #     return d
         
     def getAllMasses(self,pdf=0):
         d_mass_results = dict()
