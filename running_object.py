@@ -177,6 +177,11 @@ class running_object():
                     up += uncert**2
                 else:
                     down += uncert**2
+
+            up = up**.5
+            down = down**.5
+            total = total**.5
+            print(mbin,up,down,total)
             setattr(self.d_mass_results[mbin],'PDF',total)
             setattr(self.d_mass_results[mbin],'PDF_up',up)
             setattr(self.d_mass_results[mbin],'PDF_down',down)
