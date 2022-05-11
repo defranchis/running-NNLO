@@ -237,23 +237,17 @@ class running_object():
         pre = datetime.now()
         
         minuit.migrad() # do first fit (only masses)
-        
+
         print('\nfirst fit took {}\n'.format(datetime.now()-pre))
         
         minuit.fixed = [False for _ in params]
         minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.nBins else (-.3,.3) for i, _ in enumerate(params)]
         minuit.migrad() # second fit, with constraints and all nuisances
-        
-        print()
-        print(np.array(minuit.values)[:self.nBins])
-        print()
-        print(np.array(minuit.errors)[:self.nBins])
-        print()
-
-        
+                
         print('second fit took {}\n'.format(datetime.now()-pre))
         
         pre_final = datetime.now()
+        minuit.fixed = [False for _ in params]
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
         minuit.strategy = 2
         minuit.tol = 1E-6
@@ -262,10 +256,7 @@ class running_object():
         print ('last step took {}\n'.format(datetime.now()-pre_final))        
         print ('total fit took {}\n'.format(datetime.now()-pre))
 
-        cov = np.empty((self.nBins,self.nBins))
-        for i in range (0,self.nBins):
-            for j in range (0,self.nBins):
-                cov[i][j] = minuit.covariance[i][j]
+        cov = np.array(minuit.covariance)
         par = np.array(minuit.values)
         err = np.array(minuit.errors)
         
@@ -273,14 +264,9 @@ class running_object():
             os.makedirs(self.od)
 
         np.save('{}/mass_results'.format(self.od),par[:self.nBins])
-        np.save('{}/mass_covariance'.format(self.od),cov)
+        np.save('{}/mass_covariance'.format(self.od),cov[:self.nBins,:self.nBins])
         np.save('{}/par_values'.format(self.od),par)
         np.save('{}/par_errors'.format(self.od),err)
-        
-        
-        print()
-        print(np.array(minuit.values)[:self.nBins])
-        print()
-        print(np.array(minuit.errors)[:self.nBins])
-        
+        np.save('{}/full_covariance'.format(self.od),cov)
+                
         return
