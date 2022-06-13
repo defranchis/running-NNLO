@@ -4,8 +4,9 @@ import numpy as np
 from datetime import datetime
 import uncertainties as unc
 import variables as var
+from matplotlib import pyplot as plt
 
-plotdir = 'plots_running'
+plotdir = 'plots_xsec'
 
 class running_object():
 
@@ -217,6 +218,48 @@ class running_object():
         self.cov_tot = self.exp_cov + self.extr_cov
         
         return
+
+
+    def drawXsecVsMassNominal(self):
+
+        if not os.path.exists(plotdir):
+            os.makedirs(plotdir)
+
+        for mbin in range(0,self.nBins):
+            
+            self.masses_for_fit = self.masses_bin[mbin]
+            self.xsec_values_for_fit = self.xsec_bin[mbin]
+            self.xsec_cov_for_fit = np.matmul(np.diag(self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit),
+                                              np.matmul(np.diag(np.ones(len(self.xsec_values_for_fit))),np.diag(self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit)))
+
+            self.minuit_dep.migrad()
+
+            plot = plt.errorbar(self.masses_for_fit,self.xsec_values_for_fit,self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit,linestyle='None',marker='.')
+            plot.set_label('calculated cross section (NNLO)')
+            
+            m_scan = np.arange(self.masses_for_fit[0],self.masses_for_fit[-1],0.001)
+            curve, = plt.plot(m_scan,self.fitQuadratic(m_scan,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2]))
+            curve.set_label('quadratic interpolation')
+
+            exp, = plt.plot(m_scan,np.array([self.exp_xsec[mbin] for _ in m_scan]))
+            exp.set_label('measured cross section')
+            
+            band = plt.fill_between(m_scan,self.exp_xsec[mbin]-self.exp_err[mbin],self.exp_xsec[mbin]+self.exp_err[mbin],facecolor='yellow')
+            band.set_label('experimental uncertainty')
+            
+            plt.title('cross section vs mass: bin {}'.format(mbin+1))
+            plt.xlabel('$m_{t}(m_{t})$ [GeV]')
+            plt.ylabel('$\sigma_{t\overline{t}}$ [pb]')
+            plt.legend(loc='upper right')
+
+            plt.savefig('{}/xsec_mass_bin_{}.pdf'.format(plotdir,mbin+1))
+            plt.close()
+
+            del self.masses_for_fit
+            del self.xsec_cov_for_fit
+            del self.xsec_values_for_fit
+        
+        return
     
     def doFit(self):
         params = np.ones(self.nBins)
@@ -227,7 +270,8 @@ class running_object():
         params = np.append(params,all_nuisances)
 
         self.defineUsefulVariablesForFit()
-        
+        self.drawXsecVsMassNominal()
+
         minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=1
 
