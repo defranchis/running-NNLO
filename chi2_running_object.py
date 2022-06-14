@@ -15,6 +15,16 @@ def save_object(obj, filename):
     with open(filename, 'wb') as outp:
         pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
 
+def isGoodFit(minuit,printout=False):
+
+    if printout:
+        print('\n-> checking fit')
+        print('is valid minumum:',minuit.valid)
+        print('has accurate covariance:',minuit.accurate)
+
+    return minuit.valid and minuit.accurate
+    
+        
 class running_object():
 
     def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.'):
@@ -306,10 +316,6 @@ class running_object():
         minuit.migrad() # fit with all parameters
         
         print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
-
-        print('full fit, reduced precision')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
 
         odRP = self.od+'_RP' # reduced precision
         if not os.path.exists(odRP):
