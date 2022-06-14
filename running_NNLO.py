@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import argparse
 
 from chi2_running_object import running_object
 from ratio_object import ratio_object
@@ -13,12 +14,22 @@ od = 'fit_results'
 
 def main():
 
+    parser = argparse.ArgumentParser(description='specify options')
+    parser.add_argument('--breakdown',action='store_true', help='approximate breakdown of uncertainties')
+    args = parser.parse_args()
+
+    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)    
     if not os.path.exists(od):
         print('\ndirectory "{}" not found: re-running fit...\n'.format(od))
-        main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)
+        main_obj.doFit()
     else:
         print('\nWARNING: directory "{0}" already exisits!\nreading in fit results from "{0}"...\n'.format(od))
 
+    if args.breakdown:
+        print('\nperforming breakdown...\n')
+        main_obj.doBreakdown()
+
+        
     masses = np.load('{}/mass_results.npy'.format(od))
     covariance = np.load('{}/mass_covariance.npy'.format(od))
 

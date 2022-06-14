@@ -5,8 +5,15 @@ from datetime import datetime
 import uncertainties as unc
 import variables as var
 from matplotlib import pyplot as plt
+import pickle
 
 plotdir = 'plots_xsec'
+
+def save_object(obj, filename):
+    if os.path.exists(filename):
+        print('\n**********\nWARNING! overwritten file {}\n**********\n'.format(filename))
+    with open(filename, 'wb') as outp:
+        pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
 
 class running_object():
 
@@ -23,7 +30,9 @@ class running_object():
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
         self.addCentralPDFtoList()
-        self.doFit()
+        self.defineUsefulVariablesForFit()
+        self.drawXsecVsMassNominal()
+
         
     def getExperimentalResults(self):
         exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
@@ -270,9 +279,6 @@ class running_object():
         all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
         params = np.append(params,all_nuisances)
 
-        self.defineUsefulVariablesForFit()
-        self.drawXsecVsMassNominal()
-
         self.minuit = iminuit.Minuit(self.globalChi2,params)
 
         minuit = self.minuit
@@ -318,7 +324,9 @@ class running_object():
         np.save('{}/par_values'.format(odRP),par)
         np.save('{}/par_errors'.format(odRP),err)
         np.save('{}/full_covariance'.format(odRP),cov)
-                        
+
+        save_object(minuit,'{}/minuit_object.pkl'.format(odRP))
+        
         pre_final = datetime.now()
         minuit.fixed = [False for _ in params]
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
@@ -342,37 +350,40 @@ class running_object():
         np.save('{}/par_values'.format(self.od),par)
         np.save('{}/par_errors'.format(self.od),err)
         np.save('{}/full_covariance'.format(self.od),cov)
-                
+
+        save_object(minuit,'{}/minuit_object.pkl'.format(self.od))
+        
         return
 
     def doBreakdown(self):
 
-        minuit = self.minuit
-        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
-        minuit.migrad() # fit with only exp
+        with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
         
-        print('\nonly exp')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err_exp = np.array(minuit.errors)[:self.nBins]
-        
-        minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
-        minuit.migrad() # fit with only exp and PDF
+            minuit = pickle.load(inp)
+            minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+            minuit.migrad() # fit with only exp
 
-        print('\nonly exp and PDF')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
-        print('PDF only:',(m_err_exp_PDF**2-m_err_exp**2)**.5)
-        
-        minuit.fixed = [False for _ in params]
-        minuit.migrad() # full fit (again)
+            print('\nonly exp')
+            print(np.array(minuit.values)[:self.nBins])
+            print(np.array(minuit.errors)[:self.nBins])
+            m_err_exp = np.array(minuit.errors)[:self.nBins]
 
-        print('\nall parameters')
+            minuit = pickle.load(inp)
+            minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
+            minuit.migrad() # fit with only exp and PDF
 
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err = np.array(minuit.errors)[:self.nBins]
-        print('num only:',(m_err**2-m_err_exp_PDF**2)**.5)
+            print('\nonly exp and PDF')
+            print(np.array(minuit.values)[:self.nBins])
+            print(np.array(minuit.errors)[:self.nBins])
+            m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
+            print('PDF only:',(m_err_exp_PDF**2-m_err_exp**2)**.5)
+
+            minuit = pickle.load(inp) #original fit
+            print('\nall parameters')
+
+            print(np.array(minuit.values)[:self.nBins])
+            print(np.array(minuit.errors)[:self.nBins])
+            m_err = np.array(minuit.errors)[:self.nBins]
+            print('num only:',(m_err**2-m_err_exp_PDF**2)**.5)
 
         return
