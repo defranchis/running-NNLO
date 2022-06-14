@@ -37,13 +37,20 @@ class ratio_object():
         self.ratio_values = np.array([ratio.n for ratio in self.ratios_wunc])
         self.cov_ratios = np.array(unc.covariance_matrix(self.ratios_wunc))
 
-        print ('\nfitted masses:\n{}\n'.format(self.masses_wunc))
-        print ('correlations:')
-        print (np.array(unc.correlation_matrix(self.masses_wunc)))
+        print ('\nfitted masses:')
+        for m in self.masses_wunc:
+            print ('{:.1f} GeV'.format(m))
+
+        print ('\ncorrelations:')
+        print (np.array(unc.correlation_matrix(self.masses_wunc)).round(2))
         
-        print ('\nfitted ratios:\n{}\n'.format(self.ratios_wunc))
-        print ('correlations:')
-        print (np.array(unc.correlation_matrix(self.ratios_wunc)))
+        print ('\nfitted ratios:')
+        for r in self.ratios_wunc:
+            print ('{:.3f}'.format(r))
+
+        print ('\ncorrelations:')
+        print (np.array(unc.correlation_matrix(self.ratios_wunc)).round(2))
+
         
         return
 
