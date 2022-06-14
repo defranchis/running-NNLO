@@ -262,6 +262,7 @@ class running_object():
         return
     
     def doFit(self):
+
         params = np.ones(self.nBins)
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
@@ -272,7 +273,9 @@ class running_object():
         self.defineUsefulVariablesForFit()
         self.drawXsecVsMassNominal()
 
-        minuit = iminuit.Minuit(self.globalChi2,params)
+        self.minuit = iminuit.Minuit(self.globalChi2,params)
+
+        minuit = self.minuit
         minuit.errordef=1
 
         minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
@@ -290,8 +293,13 @@ class running_object():
                 
         print('second fit took {}\n'.format(datetime.now()-pre))
 
+        pre_RP = datetime.now()
+
+        minuit.strategy=2
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
         minuit.migrad() # fit with all parameters
+        
+        print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
 
         print('full fit, reduced precision')
         print(np.array(minuit.values)[:self.nBins])
@@ -310,41 +318,13 @@ class running_object():
         np.save('{}/par_values'.format(odRP),par)
         np.save('{}/par_errors'.format(odRP),err)
         np.save('{}/full_covariance'.format(odRP),cov)
-        
-        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
-        minuit.migrad() # fit with only exp
-        
-        print('\nonly exp')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err_exp = np.array(minuit.errors)[:self.nBins]
-        
-        minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
-        minuit.migrad() # fit with only exp and PDF
-
-
-        print('\nonly exp and PDF')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err = np.array(minuit.errors)[:self.nBins]
-        print((m_err**2-m_err_exp**2)**.5)
-        
-        minuit.fixed = [False if i<len(params)-self.nPDFs else True for i, _ in enumerate(params)]
-        minuit.migrad() # only exp and num
-
-        print('\nonly exp and num')
-        print(np.array(minuit.values)[:self.nBins])
-        print(np.array(minuit.errors)[:self.nBins])
-        m_err = np.array(minuit.errors)[:self.nBins]
-        print((m_err**2-m_err_exp**2)**.5)
-
-                
+                        
         pre_final = datetime.now()
         minuit.fixed = [False for _ in params]
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
         
         minuit.strategy = 2
-        minuit.tol = 1E-6
+        minuit.tol = 0
         minuit.migrad() # final fit
         
         print ('\nlast step took {}'.format(datetime.now()-pre_final))        
@@ -363,4 +343,36 @@ class running_object():
         np.save('{}/par_errors'.format(self.od),err)
         np.save('{}/full_covariance'.format(self.od),cov)
                 
+        return
+
+    def doBreakdown(self):
+
+        minuit = self.minuit
+        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+        minuit.migrad() # fit with only exp
+        
+        print('\nonly exp')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err_exp = np.array(minuit.errors)[:self.nBins]
+        
+        minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
+        minuit.migrad() # fit with only exp and PDF
+
+        print('\nonly exp and PDF')
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
+        print('PDF only:',(m_err_exp_PDF**2-m_err_exp**2)**.5)
+        
+        minuit.fixed = [False for _ in params]
+        minuit.migrad() # full fit (again)
+
+        print('\nall parameters')
+
+        print(np.array(minuit.values)[:self.nBins])
+        print(np.array(minuit.errors)[:self.nBins])
+        m_err = np.array(minuit.errors)[:self.nBins]
+        print('num only:',(m_err**2-m_err_exp_PDF**2)**.5)
+
         return
