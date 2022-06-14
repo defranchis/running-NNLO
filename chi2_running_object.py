@@ -364,32 +364,41 @@ class running_object():
     def doBreakdown(self):
 
         with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
-        
             minuit = pickle.load(inp)
-            minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
-            minuit.migrad() # fit with only exp
-
-            print('\nonly exp')
-            print(np.array(minuit.values)[:self.nBins])
-            print(np.array(minuit.errors)[:self.nBins])
-            m_err_exp = np.array(minuit.errors)[:self.nBins]
-
-            minuit = pickle.load(inp)
-            minuit.fixed = [False if (i<self.nBins or i>len(params)-self.nPDFs) else True for i, _ in enumerate(params)]
-            minuit.migrad() # fit with only exp and PDF
-
-            print('\nonly exp and PDF')
-            print(np.array(minuit.values)[:self.nBins])
-            print(np.array(minuit.errors)[:self.nBins])
-            m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
-            print('PDF only:',(m_err_exp_PDF**2-m_err_exp**2)**.5)
-
-            minuit = pickle.load(inp) #original fit
-            print('\nall parameters')
-
-            print(np.array(minuit.values)[:self.nBins])
-            print(np.array(minuit.errors)[:self.nBins])
             m_err = np.array(minuit.errors)[:self.nBins]
-            print('num only:',(m_err**2-m_err_exp_PDF**2)**.5)
+            print('-> full uncertainty')
+            print(m_err)
 
+            minuit.strategy = 2
+            minuit.tol = 0
+            
+            minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(minuit.values)]
+            minuit.migrad() # fit with only exp
+            m_err_exp = np.array(minuit.errors)[:self.nBins]
+            
+            print('\n-> only exp')
+            print(m_err_exp)
+
+        with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
+            minuit = pickle.load(inp)
+            minuit.strategy = 2
+            minuit.tol = 0
+            
+            minuit.fixed = [False if (i<self.nBins or i>len(minuit.values)-self.nPDFs) else True for i, _ in enumerate(minuit.values)]
+            minuit.migrad() # fit with only exp and PDF
+            m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
+            print('\n-> only exp and PDF')
+            print(m_err_exp_PDF)
+
+            m_err_PDF = (m_err_exp_PDF**2-m_err_exp**2)**.5
+            print('\nPDF only:',m_err_PDF)
+
+            m_err_num = (m_err**2-m_err_exp_PDF**2)**.5
+            print('\nnum only:',m_err_num)
+
+        print()
+        for i in range(0,self.nBins):
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF) +/- {:.2f} (num) GeV'.format(i+1,minuit.values[i],m_err_exp[i],m_err_PDF[i],m_err_num[i]))
+        print()
+            
         return
