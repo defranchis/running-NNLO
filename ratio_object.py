@@ -25,15 +25,15 @@ class ratio_object():
         self.cov_masses = covariance
         self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.nBins = len(self.scales)
+        self.masses_wunc = np.array(unc.correlated_values(self.mass_values,self.cov_masses))
+        self.plotMasses()
         self.estimateRatios()
         self.estimateBestRunning()
         self.fitDynamicMassGeneration()
 
     def estimateRatios(self):
 
-        self.masses_wunc = np.array(unc.correlated_values(self.mass_values,self.cov_masses))
         self.ratios_wunc = np.delete(self.masses_wunc / self.masses_wunc[self.ref_bin],self.ref_bin)
-
         self.ratio_values = np.array([ratio.n for ratio in self.ratios_wunc])
         self.cov_ratios = np.array(unc.covariance_matrix(self.ratios_wunc))
 
@@ -192,4 +192,32 @@ class ratio_object():
         plt.savefig('{}/dynmass.png'.format(plotdir))
         plt.close()
         
+        return
+
+    def plotMasses(self):
+        err_mass = np.array([mass.s for mass in self.masses_wunc])
+        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
+        mass_points.set_label('exctracted $m_\mathrm{t}(\mu_{k})$ at NNLO (from differential)')
+
+        mass_incl = plt.errorbar(cnst.mtmt,cnst.mtmt,cnst.mtmt_err,fmt='o')
+        mass_incl.set_label('exctracted $m_\mathrm{t}(m_\mathrm{t})$ at NNLO (from inclusive)')
+
+        mu_scan = np.arange(cnst.mtmt,self.scales[-1],1)
+        masses_evolved = np.array([conv.mtmt2mtmu(cnst.mtmt,scale) for scale in mu_scan])
+        masses_evolved_err = masses_evolved/cnst.mtmt*cnst.mtmt_err
+
+        band = plt.fill_between(mu_scan,masses_evolved-masses_evolved_err,masses_evolved+masses_evolved_err,facecolor='yellow')
+        band.set_label('evolved uncertainty: nloops = {}, nflav = {}'.format(cnst.nloops,cnst.nflav))
+
+        plt.text(cnst.mtmt,self.mass_values[-1]+3,'ABMP16_5_nnlo PDF set')
+        
+        plt.legend(loc='lower left')
+        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
+        plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
+        plt.title('running $m_\mathrm{t}(\mu_m)$ at NNLO')
+        
+        plt.savefig('{}/masses.pdf'.format(plotdir))
+        plt.savefig('{}/masses.png'.format(plotdir))
+        plt.close()
+
         return
