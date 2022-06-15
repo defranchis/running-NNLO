@@ -272,6 +272,7 @@ class running_object():
             plt.legend(loc='upper right')
 
             plt.savefig('{}/xsec_mass_bin_{}.pdf'.format(plotdir,mbin+1))
+            plt.savefig('{}/xsec_mass_bin_{}.png'.format(plotdir,mbin+1))
             plt.close()
 
             del self.masses_for_fit
@@ -366,8 +367,6 @@ class running_object():
         with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
             minuit = pickle.load(inp)
             m_err = np.array(minuit.errors)[:self.nBins]
-            print('-> full uncertainty')
-            print(m_err)
 
             minuit.strategy = 2
             minuit.tol = 0
@@ -376,29 +375,12 @@ class running_object():
             minuit.migrad() # fit with only exp
             m_err_exp = np.array(minuit.errors)[:self.nBins]
             
-            print('\n-> only exp')
-            print(m_err_exp)
+            m_err_PDF_num = (m_err**2-m_err_exp**2)**.5
 
-        with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
-            minuit = pickle.load(inp)
-            minuit.strategy = 2
-            minuit.tol = 0
-            
-            minuit.fixed = [False if (i<self.nBins or i>len(minuit.values)-self.nPDFs) else True for i, _ in enumerate(minuit.values)]
-            minuit.migrad() # fit with only exp and PDF
-            m_err_exp_PDF = np.array(minuit.errors)[:self.nBins]
-            print('\n-> only exp and PDF')
-            print(m_err_exp_PDF)
-
-            m_err_PDF = (m_err_exp_PDF**2-m_err_exp**2)**.5
-            print('\nPDF only:',m_err_PDF)
-
-            m_err_num = (m_err**2-m_err_exp_PDF**2)**.5
-            print('\nnum only:',m_err_num)
 
         print()
         for i in range(0,self.nBins):
-            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF) +/- {:.2f} (num) GeV'.format(i+1,minuit.values[i],m_err_exp[i],m_err_PDF[i],m_err_num[i]))
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) GeV'.format(i+1,minuit.values[i],m_err_exp[i],m_err_PDF_num[i]))
         print()
             
         return
