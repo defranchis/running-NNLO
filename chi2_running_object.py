@@ -267,7 +267,7 @@ class running_object():
             band.set_label('experimental uncertainty')
             
             plt.title('cross section vs mass: bin {}'.format(mbin+1))
-            plt.xlabel('$m_{t}(m_{t})$ [GeV]')
+            plt.xlabel('$m_{t}(m_{\mu_k})$ [GeV]')
             plt.ylabel('$\sigma_{t\overline{t}}$ [pb]')
             plt.legend(loc='upper right')
 
