@@ -18,11 +18,13 @@ plotdir = 'plots_running'
 
 class ratio_object():
 
-    def __init__(self,masses,covariance,ref_bin=2):
+    def __init__(self,indir,scale_vars,ref_bin=2):
         
         self.ref_bin = ref_bin-1
-        self.mass_values = masses
-        self.cov_masses = covariance
+        self.mass_values = np.load('{}/mass_results.npy'.format(indir))
+        self.cov_masses = np.load('{}/mass_covariance.npy'.format(indir))
+        self.indir = indir
+        self.scale_vars = scale_vars
         self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.nBins = len(self.scales)
         self.masses_wunc = np.array(unc.correlated_values(self.mass_values,self.cov_masses))
@@ -44,14 +46,26 @@ class ratio_object():
         print ('\ncorrelations:')
         print (np.array(unc.correlation_matrix(self.masses_wunc)).round(2))
         
+
+        scale_up = copy.deepcopy(self.ratio_values)
+        scale_down = copy.deepcopy(self.ratio_values)
+        for scales in self.scale_vars:
+            m_scale = np.load('{}/mass_results_{}.npy'.format(self.indir,scales))
+            r_scale = np.delete(m_scale/m_scale[self.ref_bin],self.ref_bin)
+            scale_up = np.maximum(scale_up,r_scale)
+            scale_down = np.minimum(scale_down,r_scale)
+        scale_up -= self.ratio_values
+        scale_down = self.ratio_values-scale_down
+
         print ('\nfitted ratios:')
-        for r in self.ratios_wunc:
-            print ('{:.3f}'.format(r))
+        for i,r in enumerate(self.ratios_wunc):
+            print ('{:.3f} +/- {:.3f} (exp+PDF+num) +{:.3f} -{:.3f} (scale)'.format(r.n,r.s,scale_up[i],scale_down[i]))
 
         print ('\ncorrelations:')
         print (np.array(unc.correlation_matrix(self.ratios_wunc)).round(2))
 
-        
+
+        sys.exit()
         return
 
     def getTheoryRatio(self,scales):

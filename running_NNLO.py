@@ -41,10 +41,7 @@ def main():
         print('\nperforming breakdown...\n')
         main_obj.doBreakdown()
         
-    masses = np.load('{}/mass_results.npy'.format(od))
-    covariance = np.load('{}/mass_covariance.npy'.format(od))
-
-    r_object = ratio_object(masses,covariance)
+    r_object = ratio_object(indir=od,scale_vars=main_obj.scale_vars)
     
     return
 
