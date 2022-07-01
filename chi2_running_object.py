@@ -132,6 +132,14 @@ class running_object():
                 
             d_nom[i]=m_xsec_nom
             d_scale[i]=m_xsec_scale
+
+        self.scale_vars = []
+        for muR in ['nom','up','down']:
+            for muF in ['nom','up','down']:
+                if (muR=='up' and muF=='down') or (muR=='down' and muF=='up') or (muR=='nom' and muF=='nom'):
+                    continue
+                self.scale_vars.append('muR{}_muF{}'.format(muR,muF))
+
         return d_nom, d_scale
 
     def readPDFuncertainties(self, inpah_PDFs):
@@ -319,11 +327,8 @@ class running_object():
 
     def doScaleVariations(self):
         print('\n-> performing scale variations...\n')
-        for muR in ['nom','up','down']:
-            for muF in ['nom','up','down']:
-                if muR=='up' and muF=='down' or muR=='down' and muF=='up':
-                    continue
-                self.doNominalFitScales('muR{}_muF{}'.format(muR,muF))
+        for scales in self.scale_vars:
+            self.doNominalFitScales(scales)
         print()
         return
         
@@ -445,7 +450,8 @@ class running_object():
         with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
             minuit = pickle.load(inp)
             m_err = np.array(minuit.errors)[:self.nBins]
-
+            masses = np.array(minuit.values)[:self.nBins]
+            
             minuit.strategy = 2
             minuit.tol = 0
             
@@ -455,10 +461,19 @@ class running_object():
             
             m_err_PDF_num = (m_err**2-m_err_exp**2)**.5
 
+        scale_up = copy.deepcopy(masses)
+        scale_down = copy.deepcopy(masses)
+        for scales in self.scale_vars:
+            m_scale = np.load('{}/mass_results_{}.npy'.format(self.od,scales))
+            scale_up = np.maximum(scale_up,m_scale)
+            scale_down = np.minimum(scale_down,m_scale)
+
+        scale_up-=masses
+        scale_down=masses-scale_down
 
         print()
         for i in range(0,self.nBins):
-            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) GeV'.format(i+1,minuit.values[i],m_err_exp[i],m_err_PDF_num[i]))
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
         print()
-            
+
         return
