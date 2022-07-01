@@ -6,6 +6,7 @@ import uncertainties as unc
 import variables as var
 from matplotlib import pyplot as plt
 import pickle
+import copy
 
 plotdir = 'plots_xsec'
 
@@ -34,15 +35,14 @@ class running_object():
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
         self.nBins = self.exp_xsec.shape[0]
         self.extr_cov = self.getExtrapolationImpacts()
-        self.d_xsec_vs_mass, self.d_xsec_vs_mass_scaleup, self.d_xsec_vs_mass_scaledown = self.readAllXsecVsMass(infile_xsec_mass)
+        self.d_xsec_vs_mass, self.d_xsec_scales_all = self.readAllXsecAndScaleVariations(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
         self.nPDFs = 30
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
-        self.addCentralPDFtoList()
+        self.addCentralPDFtoList(onlyNumUnc=True)
         self.defineUsefulVariablesForFit()
         self.drawXsecVsMassNominal()
-
         
     def getExperimentalResults(self):
         exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
@@ -99,6 +99,41 @@ class running_object():
             d_down[i]=m_xsec_down
         return d, d_up, d_down
 
+    def readAllXsecAndScaleVariations(self,filename):
+        bin_low = []
+        f = open(filename)
+        lines = f.read().splitlines()
+        for l in lines:
+            if l == '': continue
+            if l.replace(' ','').startswith('#'): continue
+            low = int(l.split()[0])
+            if not low in bin_low:
+                bin_low.append(low)
+        bin_low.sort()
+        d_nom = dict()
+        d_scale = dict()
+        for i, low in enumerate(bin_low):
+            m_xsec_nom = dict()
+            m_xsec_scale = dict()
+            for l in lines:
+                if l == '': continue
+                if l.replace(' ','').startswith('#'): continue
+                if int(l.split()[0]) != low: continue
+                central = float(l.split()[5])
+                m_xsec_nom[l.split()[-1]] = central
+                dd = dict()
+                dd['muRdown_muFdown'] = float(l.split()[2]) / central
+                dd['muRdown_muFnom'] = float(l.split()[3]) / central
+                dd['muRup_muFnom'] = float(l.split()[4]) / central
+                dd['muRnom_muFup'] = float(l.split()[6]) / central
+                dd['muRnom_muFdown'] = float(l.split()[7]) / central
+                dd['muRup_muFup'] = float(l.split()[8]) / central
+                m_xsec_scale[l.split()[-1]] = dd
+                
+            d_nom[i]=m_xsec_nom
+            d_scale[i]=m_xsec_scale
+        return d_nom, d_scale
+
     def readPDFuncertainties(self, inpah_PDFs):
         d_pdf = dict()
         for pdf in range(0,self.nPDFs):
@@ -127,11 +162,12 @@ class running_object():
             d[i]=m_xsec
         return d
 
-    def addCentralPDFtoList(self):
+    def addCentralPDFtoList(self,onlyNumUnc=False):
         d = self.d_PDFunc[0]
         for i in d.keys():
             for mass in d[i].keys():
-                self.d_xsec_vs_mass[i][mass]=d[i][mass]
+                if not onlyNumUnc:
+                    self.d_xsec_vs_mass[i][mass]=d[i][mass]
                 self.d_numunc[i][mass]=self.d_numunc_PDFs[0][i][float(mass)]
         return
     
@@ -280,9 +316,18 @@ class running_object():
             del self.xsec_values_for_fit
         
         return
-    
-    def doFit(self):
 
+    def doScaleVariations(self):
+        print('\n-> performing scale variations...\n')
+        for muR in ['nom','up','down']:
+            for muF in ['nom','up','down']:
+                if muR=='up' and muF=='down' or muR=='down' and muF=='up':
+                    continue
+                self.doNominalFitScales('muR{}_muF{}'.format(muR,muF))
+        print()
+        return
+        
+    def createMinuitObject(self):
         params = np.ones(self.nBins)
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
@@ -290,10 +335,41 @@ class running_object():
         all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
         params = np.append(params,all_nuisances)
 
-        self.minuit = iminuit.Minuit(self.globalChi2,params)
-
-        minuit = self.minuit
+        minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=1
+        params = params
+        
+        return minuit,params
+
+    def doNominalFitScales(self,scales='muRnom_muFnom'):
+        print('fit for scale variation {}'.format(scales))
+        xsec_bin_orig = copy.deepcopy(self.xsec_bin)
+        
+        for mbin in range(0,self.nBins):
+            scale_var = np.array([self.d_xsec_scales_all[mbin][str(m)][scales] for m in self.masses_bin[mbin]]) if scales != 'muRnom_muFnom' else np.ones(len(self.masses_bin[mbin]))
+            self.xsec_bin[mbin] *= scale_var
+
+        minuit, params = self.createMinuitObject()
+            
+        with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
+            minuit_orig = pickle.load(inp)
+            minuit.values = copy.deepcopy(minuit_orig.values)
+
+        minuit.strategy = 2
+        minuit.tol = 0
+            
+        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+        minuit.migrad()
+
+        par = np.array(minuit.values)
+        np.save('{}/mass_results_{}'.format(self.od,scales),par[:self.nBins])
+        
+        self.xsec_bin = copy.deepcopy(xsec_bin_orig)
+        return
+    
+    def doFullFit(self):
+
+        minuit, params = self.createMinuitObject()
 
         minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
         minuit.limits = [(-1*math.inf,math.inf) if i<self.nBins else (-1,1) for i, _ in enumerate(params)]
@@ -359,6 +435,8 @@ class running_object():
         np.save('{}/full_covariance'.format(self.od),cov)
 
         save_object(minuit,'{}/minuit_object.pkl'.format(self.od))
+
+        self.doScaleVariations()
         
         return
 

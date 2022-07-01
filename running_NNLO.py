@@ -8,7 +8,7 @@ from ratio_object import ratio_object
 
 dat_dir = 'NNLO_dat'
 PDF_dir = 'PDFs_conv'
-infile_xsec_mass = '{}/mass_points.dat'.format(dat_dir)
+infile_xsec_mass = '{}/scale_variations/scales_all.dat'.format(dat_dir)
 infile_num_unc = '{}/rel_uncert.json'.format(dat_dir)
 inpath_PDFs = '{}/{}/pdf_variation_{}.dat'.format(dat_dir,PDF_dir,'{}')
 infile_num_unc_PDFs = '{}/{}/rel_uncert_bin{}.json'.format(dat_dir,PDF_dir,'{}')
@@ -31,12 +31,12 @@ def main():
     main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)
     if not os.path.exists(od):
         print('\ndirectory "{}" not found: re-running fit...\n'.format(od))
-        main_obj.doFit()
+        main_obj.doFullFit()
     else:
         print('\nWARNING: directory "{0}" already exisits!\nreading in fit results from "{0}"...\n'.format(od))
 
     checkFitResults()
-        
+    
     if args.breakdown:
         print('\nperforming breakdown...\n')
         main_obj.doBreakdown()
