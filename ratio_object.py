@@ -109,7 +109,8 @@ class ratio_object():
                 sys.exit()
         signs = self.scale_impacts_ratio['muRup_muFup']/abs(self.scale_impacts_ratio['muRup_muFup'])
         values = np.maximum(abs(self.scale_impacts_ratio['muRup_muFup']),abs(self.scale_impacts_ratio['muRdown_muFdown'])) * signs
-
+        # values = np.array([abs(self.scale_impacts_ratio['muRup_muFup'][b]) if self.ratio_values[b] < self.getTheoryRatio([self.scales[b]])[0] else abs(self.scale_impacts_ratio['muRdown_muFdown'][b]) \
+        #                    for b in range(0,self.nBins-1)]) * signs
         return np.matmul(np.diag(values),np.matmul(np.ones((self.nBins-1,self.nBins-1)),np.diag(values)))
 
     
