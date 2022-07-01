@@ -30,6 +30,7 @@ class ratio_object():
         self.masses_wunc = np.array(unc.correlated_values(self.mass_values,self.cov_masses))
         self.plotMasses()
         self.estimateRatios()
+        self.scales_in_chisq = True
         self.estimateBestRunning()
         self.fitDynamicMassGeneration()
 
@@ -49,9 +50,11 @@ class ratio_object():
 
         scale_up = copy.deepcopy(self.ratio_values)
         scale_down = copy.deepcopy(self.ratio_values)
+        self.scale_impacts_ratio = dict()
         for scales in self.scale_vars:
             m_scale = np.load('{}/mass_results_{}.npy'.format(self.indir,scales))
             r_scale = np.delete(m_scale/m_scale[self.ref_bin],self.ref_bin)
+            self.scale_impacts_ratio[scales] = r_scale - self.ratio_values
             scale_up = np.maximum(scale_up,r_scale)
             scale_down = np.minimum(scale_down,r_scale)
         scale_up -= self.ratio_values
@@ -64,8 +67,9 @@ class ratio_object():
         print ('\ncorrelations:')
         print (np.array(unc.correlation_matrix(self.ratios_wunc)).round(2))
 
-
-        sys.exit()
+        self.err_ratios_scale_up = scale_up
+        self.err_ratios_scale_down = scale_down
+        
         return
 
     def getTheoryRatio(self,scales):
@@ -76,9 +80,39 @@ class ratio_object():
         return x*(self.getTheoryRatio(scales)-1)+1
 
     def computeChi2(self,x=1):
+        if not self.scales_in_chisq:
+            tot_cov = self.cov_ratios
+        else:
+            tot_cov = self.cov_ratios + self.getScaleCovarianceRatios()
         return np.matmul(self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin)),
-                         np.matmul(np.linalg.inv(self.cov_ratios),self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin))))
+                         np.matmul(np.linalg.inv(tot_cov),self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin))))
 
+    def getScaleCovarianceRatios(self):
+        for b in range(0,self.nBins-1):
+            up = np.array([self.scale_impacts_ratio[scales][b] for scales in self.scale_vars if not 'down' in scales])
+            down = np.array([self.scale_impacts_ratio[scales][b] for scales in self.scale_vars if not 'up' in scales])
+            up *= up[0]/abs(up[0])
+            down *= down[0]/abs(down[0])
+            if not (up>0).all() or not (down>0).all():
+                print('ERROR: cannot make good estimate of scale covariance: different signs in same-side variation')
+                print('please look at the details...\n')
+                sys.exit()
+            if abs(self.scale_impacts_ratio['muRup_muFup'][b]) < abs(self.scale_impacts_ratio['muRup_muFnom'][b]) \
+               or abs(self.scale_impacts_ratio['muRup_muFup'][b]) < abs(self.scale_impacts_ratio['muRnom_muFup'][b]):
+                print('ERROR: cannot make good estimate of scale covariance: combined variation smaller than individual variations')
+                print('please look at the details...\n')
+                sys.exit()
+            if abs(self.scale_impacts_ratio['muRdown_muFdown'][b]) < abs(self.scale_impacts_ratio['muRdown_muFnom'][b]) \
+               or abs(self.scale_impacts_ratio['muRdown_muFdown'][b]) < abs(self.scale_impacts_ratio['muRnom_muFdown'][b]):
+                print('ERROR: cannot make good estimate of scale covariance: combined variation smaller than individual variations')
+                print('please look at the details...\n')
+                sys.exit()
+        signs = self.scale_impacts_ratio['muRup_muFup']/abs(self.scale_impacts_ratio['muRup_muFup'])
+        values = np.maximum(abs(self.scale_impacts_ratio['muRup_muFup']),abs(self.scale_impacts_ratio['muRdown_muFdown'])) * signs
+
+        return np.matmul(np.diag(values),np.matmul(np.ones((self.nBins-1,self.nBins-1)),np.diag(values)))
+
+    
     def estimateBestRunning(self):
 
         ndf = self.ratio_values.shape[0]
@@ -109,17 +143,31 @@ class ratio_object():
         print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit,self.prob_xFit*100.))
         print()
             
+        self.producePlotRatio(scale_variations=False)
         self.producePlotRatio()
             
         return
 
-    def producePlotRatio(self):
+    def producePlotRatio(self,scale_variations=True):
+
         err_ratios = np.array([ratio.s for ratio in self.ratios_wunc])
-        ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o')
-        ratio_points.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+
+        if scale_variations:
+            err_ratios_tot_up = (err_ratios**2+self.err_ratios_scale_up**2)**.5
+            err_ratios_tot_down = (err_ratios**2+self.err_ratios_scale_down**2)**.5
+            err_ratios_asymm = np.array(list(zip(err_ratios_tot_down, err_ratios_tot_up))).T
+
+            scales = np.delete(self.scales,self.ref_bin)
+            ratio_points_tot = plt.errorbar(scales, self.ratio_values, err_ratios_asymm, fmt = '.',ecolor='C0',color='C0')
+            ratio_points_tot.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+
+
+        ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o',capsize=2,color='C0',ecolor='C0')
+        if not scale_variations:
+            ratio_points.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
 
         mu_scan = np.arange(self.scales[0],self.scales[-1],1)
-        curve, = plt.plot(mu_scan,self.getTheoryRatio(mu_scan))
+        curve, = plt.plot(mu_scan,self.getTheoryRatio(mu_scan),color='C1')
         curve.set_label('QCD running: nloops = {}, nflav = {}'.format(cnst.nloops,cnst.nflav))
 
         plt.legend(loc='lower left')
@@ -127,16 +175,22 @@ class ratio_object():
         plt.ylabel('running $m_\mathrm{t}(\mu) / m_\mathrm{t}(\mu_\mathrm{ref})$')
         plt.title('QCD running at NNLO')
 
-        plt.text(210,.9,'data/theory $\chi^2/ndf$ = {:.1f}'.format(self.chi2_QCD/(self.nBins-1)))
-        plt.text(210,.885,'probability = {:.1f}%'.format(self.prob_QCD*100.))
+        if scale_variations:
+            plt.text(210,.9,'data/theory $\chi^2/ndf$ = {:.1f}'.format(self.chi2_QCD/(self.nBins-1)))
+            plt.text(210,.885,'probability = {:.1f}%'.format(self.prob_QCD*100.))
         plt.text(390,1.03,'ABMP16_5_nnlo PDF set')
         plt.text(390,1.015,'$\mu_0 = \mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
         
         if not os.path.exists(plotdir):
             os.makedirs(plotdir)
 
-        plt.savefig('{}/running.pdf'.format(plotdir))
-        plt.savefig('{}/running.png'.format(plotdir))
+        if scale_variations:
+            plt.savefig('{}/running_scale.pdf'.format(plotdir))
+            plt.savefig('{}/running_scale.png'.format(plotdir))
+        else:
+            plt.savefig('{}/running.pdf'.format(plotdir))
+            plt.savefig('{}/running.png'.format(plotdir))
+
         plt.close()
         
         return
