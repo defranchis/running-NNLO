@@ -28,9 +28,10 @@ def isGoodFit(minuit,printout=False):
         
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.'):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False):
         
         self.od = output_dir
+        self.PDFsFromNLO = PDFsFromNLO
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
         self.nBins = self.exp_xsec.shape[0]
@@ -39,6 +40,7 @@ class running_object():
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
         self.nPDFs = 30
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
+        self.d_PDFunc_nlo = self.readPDFuncertaintiesNLO('NNLO_dat/nnloPDFs.json')
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
         self.addCentralPDFtoList(onlyNumUnc=True)
         self.defineUsefulVariablesForFit()
@@ -148,6 +150,12 @@ class running_object():
             d_pdf[pdf] = self.readPDFuncertainty(inpah_PDFs,pdf)
         return d_pdf
 
+    def readPDFuncertaintiesNLO(self, infile):
+        d = json.load(open(infile,'r'))
+        for k in d.keys():
+            d[k] = np.delete(np.array(d[k])/d[k][0],0)
+        return d
+        
     def readPDFuncertainty(self,inpath_PDFs,pdf):
         bin_low = []
         f = open(inpath_PDFs.format(pdf))
@@ -232,10 +240,12 @@ class running_object():
         cov = np.matmul(np.diag(self.rel_err_xsec_bin[mbin]*xsec),np.matmul(np.diag(np.ones(len(xsec))),np.diag(self.rel_err_xsec_bin[mbin]*xsec)))
         xsec_corr_values = np.array(unc.correlated_values(xsec,cov))
 
-        xsec_PDFs = self.xsec_PDFs_bin[mbin]*(1+MCstat_nuisances_PDFs_bin*self.rel_err_xsec_PDFs_bin[mbin]) # MC stat correction PDF
-        xsec_PDFs_wunc = np.array([unc.ufloat(xsec_PDFs[i],xsec_PDFs[i]*self.rel_err_xsec_PDFs_bin[mbin][i]) for i in range(0,len(self.rel_err_xsec_PDFs_bin[mbin]))])
-
-        rel_variations = nuisances_PDFs * (xsec_PDFs_wunc/xsec_corr_values[self.ref_mass_bin[mbin]]-1) +1 # relative PDF variations
+        if not self.PDFsFromNLO:
+            xsec_PDFs = self.xsec_PDFs_bin[mbin]*(1+MCstat_nuisances_PDFs_bin*self.rel_err_xsec_PDFs_bin[mbin]) # MC stat correction PDF
+            xsec_PDFs_wunc = np.array([unc.ufloat(xsec_PDFs[i],xsec_PDFs[i]*self.rel_err_xsec_PDFs_bin[mbin][i]) for i in range(0,len(self.rel_err_xsec_PDFs_bin[mbin]))])
+            rel_variations = nuisances_PDFs * (xsec_PDFs_wunc/xsec_corr_values[self.ref_mass_bin[mbin]]-1) +1 # relative PDF variations
+        else:
+            rel_variations = nuisances_PDFs * (self.d_PDFunc_nlo[str(mbin+1)]-1) + 1
         xsec_corr_values = xsec_corr_values * np.prod(rel_variations)
 
         self.masses_for_fit = self.masses_bin[mbin]
@@ -253,11 +263,15 @@ class running_object():
     def globalChi2(self,params):
         masses = params[0:self.nBins]
         all_nuisances = params[self.nBins:]
-
-        MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints_integrated[i-1]:self.nBins+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
-        MCstat_nuisances_PDFs_bin = [params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
-        nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
-
+        if not self.PDFsFromNLO:
+            MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints_integrated[i-1]:self.nBins+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
+            MCstat_nuisances_PDFs_bin = [params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
+            nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
+        else:
+            nuisances_PDFs = params[self.nBins:self.nBins+self.nPDFs-1]
+            MCstat_nuisances_bin = [params[self.nBins+self.nPDFs-1+self.nMassPoints_integrated[i-1]:self.nBins+self.nPDFs-1+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
+            MCstat_nuisances_PDFs_bin = [[] for _ in range(0,self.nBins)]
+            
         a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(self.cov_tot),res_array))
@@ -344,9 +358,13 @@ class running_object():
         for i in range(0,self.nBins):
             self.nMassPoints_integrated[i] += self.nMassPoints_integrated[i-1]
 
-        all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
-        params = np.append(params,all_nuisances)
+        if not self.PDFsFromNLO:
+            all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
+        else:
+            all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)) # MC stat parameters (nominal+PDFs) and PDFs
 
+        params = np.append(params,all_nuisances)
+        
         minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=1
 
@@ -405,21 +423,22 @@ class running_object():
         
         print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
 
-        odRP = self.od+'_RP' # reduced precision
-        if not os.path.exists(odRP):
-            os.makedirs(odRP)
+        if not self.PDFsFromNLO:
+            odRP = self.od+'_RP' # reduced precision
+            if not os.path.exists(odRP):
+                os.makedirs(odRP)
 
-        cov = np.array(minuit.covariance)
-        par = np.array(minuit.values)
-        err = np.array(minuit.errors)
+            cov = np.array(minuit.covariance)
+            par = np.array(minuit.values)
+            err = np.array(minuit.errors)
 
-        np.save('{}/mass_results'.format(odRP),par[:self.nBins])
-        np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
-        np.save('{}/par_values'.format(odRP),par)
-        np.save('{}/par_errors'.format(odRP),err)
-        np.save('{}/full_covariance'.format(odRP),cov)
+            np.save('{}/mass_results'.format(odRP),par[:self.nBins])
+            np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
+            np.save('{}/par_values'.format(odRP),par)
+            np.save('{}/par_errors'.format(odRP),err)
+            np.save('{}/full_covariance'.format(odRP),cov)
 
-        save_object(minuit,'{}/minuit_object.pkl'.format(odRP))
+            save_object(minuit,'{}/minuit_object.pkl'.format(odRP))
         
         pre_final = datetime.now()
         minuit.fixed = [False for _ in params]
@@ -478,8 +497,9 @@ class running_object():
         scale_down=masses-scale_down
 
         print()
+        PDF_string = 'PDF' if self.PDFsFromNLO else 'PDF+num'
         for i in range(0,self.nBins):
-            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} ({}) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],PDF_string,scale_up[i],scale_down[i]))
         print()
 
         return

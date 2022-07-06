@@ -14,7 +14,7 @@ inpath_PDFs = '{}/{}/pdf_variation_{}.dat'.format(dat_dir,PDF_dir,'{}')
 infile_num_unc_PDFs = '{}/{}/rel_uncert_bin{}.json'.format(dat_dir,PDF_dir,'{}')
 od = 'fit_results'
 
-def checkFitResults():
+def checkFitResults(od):
     with open('{}/minuit_object.pkl'.format(od), 'rb') as inp:
         minuit = pickle.load(inp)
         if not isGoodFit(minuit,printout=True):
@@ -26,16 +26,22 @@ def main():
 
     parser = argparse.ArgumentParser(description='specify options')
     parser.add_argument('--breakdown',action='store_true', help='approximate breakdown of uncertainties')
+    parser.add_argument('--PDFsFromNLO',action='store_true', help='use PDF variations estimated using NLO calculation and NNLO PDFs')
     args = parser.parse_args()
 
-    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)
+    global od
+    
+    if args.PDFsFromNLO:
+        od += '_nloPDFs'
+
+    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od,args.PDFsFromNLO)
     if not os.path.exists(od):
         print('\ndirectory "{}" not found: re-running fit...\n'.format(od))
         main_obj.doFullFit()
     else:
         print('\nWARNING: directory "{0}" already exisits!\nreading in fit results from "{0}"...\n'.format(od))
 
-    checkFitResults()
+    checkFitResults(od)
     
     if args.breakdown:
         print('\nperforming breakdown...\n')
