@@ -26,9 +26,13 @@ def main():
 
     parser = argparse.ArgumentParser(description='specify options')
     parser.add_argument('--breakdown',action='store_true', help='approximate breakdown of uncertainties')
+    parser.add_argument('--PDFsFromNLO',action='store_true', help='use PDF variations estimated using NLO calculation and NNLO PDFs')
     args = parser.parse_args()
 
-    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od)
+    if args.PDFsFromNLO:
+        od += '_nloPDFs'
+
+    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od,args.PDFsFromNLO)
     if not os.path.exists(od):
         print('\ndirectory "{}" not found: re-running fit...\n'.format(od))
         main_obj.doFullFit()
