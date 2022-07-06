@@ -253,11 +253,9 @@ class running_object():
     def globalChi2(self,params):
         masses = params[0:self.nBins]
         all_nuisances = params[self.nBins:]
-
-        MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints_integrated[i-1]:self.nBins+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
+        MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints[i-1]:self.nBins+self.nMassPoints[i-1]+self.nMassPoints[i]] for i in range(0,self.nBins)]
         MCstat_nuisances_PDFs_bin = [params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
         nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
-
         a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(self.cov_tot),res_array))
@@ -339,17 +337,13 @@ class running_object():
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
         self.nMassPoints.append(0) # useful in globalChi2
-
-        self.nMassPoints_integrated = copy.deepcopy(self.nMassPoints)
-        for i in range(0,self.nBins):
-            self.nMassPoints_integrated[i] += self.nMassPoints_integrated[i-1]
-
         all_nuisances = np.zeros(sum(self.nMassPoints)+(self.nPDFs-1)*(self.nBins+1)) # MC stat parameters (nominal+PDFs) and PDFs
         params = np.append(params,all_nuisances)
 
         minuit = iminuit.Minuit(self.globalChi2,params)
         minuit.errordef=1
-
+        params = params
+        
         return minuit,params
 
     def doNominalFitScales(self,scales='muRnom_muFnom'):
