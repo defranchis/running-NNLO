@@ -497,9 +497,8 @@ class running_object():
         scale_down=masses-scale_down
 
         print()
-        PDF_string = 'PDF' if self.PDFsFromNLO else 'PDF+num'
         for i in range(0,self.nBins):
-            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} ({}) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],PDF_string,scale_up[i],scale_down[i]))
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
         print()
 
         return
