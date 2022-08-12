@@ -42,7 +42,7 @@ class ratio_object():
 
         print ('\nfitted masses:')
         for m in self.masses_wunc:
-            print ('{:.1f} GeV'.format(m))
+            print ('{:.2f} GeV'.format(m))
 
         print ('\ncorrelations:')
         print (np.array(unc.correlation_matrix(self.masses_wunc)).round(2))
@@ -160,30 +160,39 @@ class ratio_object():
 
             scales = np.delete(self.scales,self.ref_bin)
             ratio_points_tot = plt.errorbar(scales, self.ratio_values, err_ratios_asymm, fmt = '.',ecolor='C0',color='C0')
-            ratio_points_tot.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
-
-
-        ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o',capsize=2,color='C0',ecolor='C0')
-        if not scale_variations:
-            ratio_points.set_label('exctracted running $m_\mathrm{t}(\mu_{k})/m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+            ratio_points_tot.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{k}/2) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
 
         mu_scan = np.arange(self.scales[0],self.scales[-1],1)
         curve, = plt.plot(mu_scan,self.getTheoryRatio(mu_scan),color='C1')
-        curve.set_label('QCD running: nloops = {}, nflav = {}'.format(cnst.nloops,cnst.nflav))
+        curve.set_label('QCD RGE solution at {} loops, {} flavours'.format(cnst.nloops,cnst.nflav))
 
-        plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
-        plt.ylabel('running $m_\mathrm{t}(\mu) / m_\mathrm{t}(\mu_\mathrm{ref})$')
-        plt.title('QCD running at NNLO')
+        # ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o',capsize=2,color='C0',ecolor='C0')
+        ratio_points = plt.errorbar(np.delete(self.scales,self.ref_bin), self.ratio_values, err_ratios, fmt='o',capsize=2,color='C0',ecolor='C0')
+        ref_points = plt.plot(self.scales[self.ref_bin],1,marker='o',color='none',markerfacecolor='none',markeredgecolor='C0',label='$\mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
+        
+        if not scale_variations:
+            ratio_points.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{k}/2) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        order = [0,2,1]
+        plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='lower left') 
+
+        # plt.legend(loc='lower left')
+        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$')
+        plt.ylabel('$m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~ m_\mathrm{t}(\mu_\mathrm{ref})$')
+        plt.title('running of $m_\mathrm{t}$ at NNLO in QCD',loc='right')
+        plt.title('Preliminary',loc='left')
 
         if scale_variations:
-            plt.text(210,.9,'data/theory $\chi^2/ndf$ = {:.1f}'.format(self.chi2_QCD/(self.nBins-1)))
-            plt.text(210,.885,'probability = {:.1f}%'.format(self.prob_QCD*100.))
-        plt.text(390,1.03,'ABMP16_5_nnlo PDF set')
-        plt.text(390,1.015,'$\mu_0 = \mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
+            plt.text(200,.87,'data-theory reduced $\chi^2$ = {:.2f}'.format(self.chi2_QCD/(self.nBins-1)))
+            plt.text(200,.855,'p-value for QCD RGE = {:.2f}'.format(self.prob_QCD))
+
+        plt.text(385,1.04, '$Matrix$ calculation at NNLO')
+        plt.text(385,1.025, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+        plt.text(385,1.01,'ABMP16_5_nnlo PDF set')
+        # plt.text(385,.99,'$\mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
         
-        if not os.path.exists(plotdir):
-            os.makedirs(plotdir)
+        os.makedirs(plotdir,exist_ok = True)
 
         if scale_variations:
             plt.savefig('{}/running_scale.pdf'.format(plotdir))
@@ -239,7 +248,7 @@ class ratio_object():
 
         err_mass = np.array([mass.s for mass in self.masses_wunc])
         mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
-        mass_points.set_label('exctracted masses $m_\mathrm{t}(\mu_{k})$ at NNLO')
+        mass_points.set_label('extracted masses $m_\mathrm{t}(\mu_{k})$ at NNLO')
 
         mu_scan = np.arange(self.scales[0],self.scales[-1],1)
         curve, = plt.plot(mu_scan,self.dynmass(mu_scan,self.mtmt_dynmass.n,self.Lambda_dynmass.n))
@@ -254,8 +263,7 @@ class ratio_object():
         plt.text(215,140,'$\Lambda = {:.1f} \pm {:.1f}$ TeV'.format(self.Lambda_dynmass.n,self.Lambda_dynmass.s), fontsize=11)
         plt.text(215,138,'$m_\mathrm{t}(m_\mathrm{t})'+' = {:.1f} \pm {:.1f}$ GeV'.format(self.mtmt_dynmass.n,self.mtmt_dynmass.s), fontsize=11)
 
-        if not os.path.exists(plotdir):
-            os.makedirs(plotdir)
+        os.makedirs(plotdir,exist_ok = True)
 
         plt.savefig('{}/dynmass.pdf'.format(plotdir))
         plt.savefig('{}/dynmass.png'.format(plotdir))
@@ -266,10 +274,10 @@ class ratio_object():
     def plotMasses(self):
         err_mass = np.array([mass.s for mass in self.masses_wunc])
         mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
-        mass_points.set_label('exctracted $m_\mathrm{t}(\mu_{k})$ at NNLO (from differential)')
+        mass_points.set_label('extracted $m_\mathrm{t}(\mu_{k})$ at NNLO (from differential)')
 
         mass_incl = plt.errorbar(cnst.mtmt,cnst.mtmt,cnst.mtmt_err,fmt='o')
-        mass_incl.set_label('exctracted $m_\mathrm{t}(m_\mathrm{t})$ at NNLO (from inclusive)')
+        mass_incl.set_label('extracted $m_\mathrm{t}(m_\mathrm{t})$ at NNLO (from inclusive)')
 
         mu_scan = np.arange(cnst.mtmt,self.scales[-1],1)
         masses_evolved = np.array([conv.mtmt2mtmu(cnst.mtmt,scale) for scale in mu_scan])
@@ -284,6 +292,8 @@ class ratio_object():
         plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
         plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
         plt.title('running $m_\mathrm{t}(\mu_m)$ at NNLO')
+
+        os.makedirs(plotdir,exist_ok = True)
         
         plt.savefig('{}/masses.pdf'.format(plotdir))
         plt.savefig('{}/masses.png'.format(plotdir))
