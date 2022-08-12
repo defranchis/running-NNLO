@@ -28,8 +28,8 @@ class ratio_object():
         self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.nBins = len(self.scales)
         self.masses_wunc = np.array(unc.correlated_values(self.mass_values,self.cov_masses))
-        self.plotMasses()
         self.estimateRatios()
+        self.plotMasses()
         self.scales_in_chisq = True
         self.estimateBestRunning()
         self.fitDynamicMassGeneration()
@@ -48,27 +48,40 @@ class ratio_object():
         print (np.array(unc.correlation_matrix(self.masses_wunc)).round(2))
         
 
-        scale_up = copy.deepcopy(self.ratio_values)
-        scale_down = copy.deepcopy(self.ratio_values)
+        r_scale_up = copy.deepcopy(self.ratio_values)
+        r_scale_down = copy.deepcopy(self.ratio_values)
+        m_scale_up = copy.deepcopy(self.mass_values)
+        m_scale_down = copy.deepcopy(self.mass_values)
+
         self.scale_impacts_ratio = dict()
+        self.scale_impacts_mass = dict()
         for scales in self.scale_vars:
             m_scale = np.load('{}/mass_results_{}.npy'.format(self.indir,scales))
             r_scale = np.delete(m_scale/m_scale[self.ref_bin],self.ref_bin)
             self.scale_impacts_ratio[scales] = r_scale - self.ratio_values
-            scale_up = np.maximum(scale_up,r_scale)
-            scale_down = np.minimum(scale_down,r_scale)
-        scale_up -= self.ratio_values
-        scale_down = self.ratio_values-scale_down
+            self.scale_impacts_mass[scales] = m_scale - self.mass_values
+            r_scale_up = np.maximum(r_scale_up,r_scale)
+            r_scale_down = np.minimum(r_scale_down,r_scale)
+            m_scale_up = np.maximum(m_scale_up,m_scale)
+            m_scale_down = np.minimum(m_scale_down,m_scale)
 
+        r_scale_up -= self.ratio_values
+        r_scale_down = self.ratio_values-r_scale_down
+        m_scale_up -= self.mass_values
+        m_scale_down = self.mass_values-m_scale_down
+
+        
         print ('\nfitted ratios:')
         for i,r in enumerate(self.ratios_wunc):
-            print ('{:.3f} +/- {:.3f} (exp+PDF+num) +{:.3f} -{:.3f} (scale)'.format(r.n,r.s,scale_up[i],scale_down[i]))
+            print ('{:.3f} +/- {:.3f} (exp+PDF+num) +{:.3f} -{:.3f} (scale)'.format(r.n,r.s,r_scale_up[i],r_scale_down[i]))
 
         print ('\ncorrelations:')
         print (np.array(unc.correlation_matrix(self.ratios_wunc)).round(2))
 
-        self.err_ratios_scale_up = scale_up
-        self.err_ratios_scale_down = scale_down
+        self.err_ratios_scale_up = r_scale_up
+        self.err_ratios_scale_down = r_scale_down
+        self.err_mass_scale_up = m_scale_up
+        self.err_mass_scale_down = m_scale_down
         
         return
 
@@ -160,18 +173,18 @@ class ratio_object():
 
             scales = np.delete(self.scales,self.ref_bin)
             ratio_points_tot = plt.errorbar(scales, self.ratio_values, err_ratios_asymm, fmt = '.',ecolor='C0',color='C0')
-            ratio_points_tot.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{k}/2) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+            ratio_points_tot.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
 
         mu_scan = np.arange(self.scales[0],self.scales[-1],1)
         curve, = plt.plot(mu_scan,self.getTheoryRatio(mu_scan),color='C1')
         curve.set_label('QCD RGE solution at {} loops, {} flavours'.format(cnst.nloops,cnst.nflav))
 
-        # ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='o',capsize=2,color='C0',ecolor='C0')
-        ratio_points = plt.errorbar(np.delete(self.scales,self.ref_bin), self.ratio_values, err_ratios, fmt='o',capsize=2,color='C0',ecolor='C0')
+        # ratio_points = plt.errorbar(self.scales, np.insert(self.ratio_values,self.ref_bin,1), np.insert(err_ratios,self.ref_bin,0), fmt='.',capsize=2,color='C0',ecolor='C0')
+        ratio_points = plt.errorbar(np.delete(self.scales,self.ref_bin), self.ratio_values, err_ratios, fmt='.',capsize=2,color='C0',ecolor='C0')
         ref_points = plt.plot(self.scales[self.ref_bin],1,marker='o',color='none',markerfacecolor='none',markeredgecolor='C0',label='$\mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
         
         if not scale_variations:
-            ratio_points.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{k}/2) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+            ratio_points.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
 
         handles, labels = plt.gca().get_legend_handles_labels()
         order = [0,2,1]
@@ -247,7 +260,7 @@ class ratio_object():
     def producePlotDynamicMass(self):
 
         err_mass = np.array([mass.s for mass in self.masses_wunc])
-        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
+        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='.')
         mass_points.set_label('extracted masses $m_\mathrm{t}(\mu_{k})$ at NNLO')
 
         mu_scan = np.arange(self.scales[0],self.scales[-1],1)
@@ -255,7 +268,7 @@ class ratio_object():
         curve.set_label('technicolor: $m_\mathrm{t}(m_\mathrm{t})}$ = '+'{:.1f}'.format(self.mtmt_dynmass.n) +' GeV, $\Lambda$ = '+'{:.1f}'.format(self.Lambda_dynmass.n)+' TeV')
 
         plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
+        plt.xlabel('energy scale $\mu_m = m_\mathrm{t\overline{t}}/2$')
         plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
         plt.title('dynamic mass generation')
 
@@ -272,26 +285,49 @@ class ratio_object():
         return
 
     def plotMasses(self):
-        err_mass = np.array([mass.s for mass in self.masses_wunc])
-        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='o')
-        mass_points.set_label('extracted $m_\mathrm{t}(\mu_{k})$ at NNLO (from differential)')
 
-        mass_incl = plt.errorbar(cnst.mtmt,cnst.mtmt,cnst.mtmt_err,fmt='o')
-        mass_incl.set_label('extracted $m_\mathrm{t}(m_\mathrm{t})$ at NNLO (from inclusive)')
+
+        err_mass = np.array([mass.s for mass in self.masses_wunc])
+
+        err_mass_tot_up = (err_mass**2+self.err_mass_scale_up**2)**.5
+        err_mass_tot_down = (err_mass**2+self.err_mass_scale_down**2)**.5
+        err_mass_asymm = np.array(list(zip(err_mass_tot_down, err_mass_tot_up))).T
+
+        mass_points_tot = plt.errorbar(self.scales, self.mass_values, err_mass_asymm, fmt = '.',ecolor='C0',color='C0')
+        mass_points_tot.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
+
+        mass_points = plt.errorbar(self.scales, self.mass_values, err_mass, fmt='.',capsize=2,color='C0',ecolor='C0')
+        mass_points_tot.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{m})$ at NNLO (from differential)')
+
+
+        mass_incl_err_up = (cnst.mtmt_err**2+cnst.mtmt_scale_up**2)**.5
+        mass_incl_err_down = (cnst.mtmt_err**2+cnst.mtmt_scale_down**2)**.5
+
+        err_mass_incl_asymm = np.array(list(zip([mass_incl_err_down],[mass_incl_err_up]))).T
+        
+        mass_incl = plt.errorbar(cnst.mtmt,cnst.mtmt,cnst.mtmt_err,fmt='.',color='C1',ecolor='C1',capsize=2)
+        mass_incl_tot = plt.errorbar(cnst.mtmt,cnst.mtmt,err_mass_incl_asymm,fmt='.',color='C1',ecolor='C1')
+        mass_incl_tot.set_label('extracted $m_\mathrm{t}(m_\mathrm{t})$ at NNLO (from inclusive)')
 
         mu_scan = np.arange(cnst.mtmt,self.scales[-1],1)
         masses_evolved = np.array([conv.mtmt2mtmu(cnst.mtmt,scale) for scale in mu_scan])
-        masses_evolved_err = masses_evolved/cnst.mtmt*cnst.mtmt_err
+        # masses_evolved_err = masses_evolved/cnst.mtmt*cnst.mtmt_err
+        masses_evolved_err_up = masses_evolved/cnst.mtmt*mass_incl_err_up
+        masses_evolved_err_down = masses_evolved/cnst.mtmt*mass_incl_err_down
+        
+        band = plt.fill_between(mu_scan,masses_evolved-masses_evolved_err_down,masses_evolved+masses_evolved_err_up,facecolor='yellow')
+        band.set_label('evolved uncertainty at {} loops, {} flavours'.format(cnst.nloops,cnst.nflav))
 
-        band = plt.fill_between(mu_scan,masses_evolved-masses_evolved_err,masses_evolved+masses_evolved_err,facecolor='yellow')
-        band.set_label('evolved uncertainty: nloops = {}, nflav = {}'.format(cnst.nloops,cnst.nflav))
-
-        plt.text(cnst.mtmt,self.mass_values[-1]+3,'ABMP16_5_nnlo PDF set')
+        offset = self.mass_values[-1]
+        plt.text(cnst.mtmt,offset+4, '$Matrix$ calculation at NNLO')
+        plt.text(cnst.mtmt,offset+2, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+        plt.text(cnst.mtmt,offset,'ABMP16_5_nnlo PDF set')
         
         plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu = m_\mathrm{t\overline{t}}/2$')
-        plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
-        plt.title('running $m_\mathrm{t}(\mu_m)$ at NNLO')
+        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$')
+        plt.ylabel('extracted $m_\mathrm{t}(\mu_\mathrm{m})$')
+        plt.title('$m_\mathrm{t}(\mu_m)$ at NNLO in QCD',loc='right')
+        plt.title('Preliminary',loc='left')
 
         os.makedirs(plotdir,exist_ok = True)
         
