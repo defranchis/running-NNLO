@@ -7,7 +7,7 @@ from chi2_running_object import running_object, isGoodFit
 from ratio_object import ratio_object
 
 dat_dir = 'NNLO_dat'
-PDF_dir = 'PDFs_conv'
+PDF_dir = 'PDFs_MSbar'
 infile_xsec_mass = '{}/scale_variations/scales_all.dat'.format(dat_dir)
 infile_num_unc = '{}/rel_uncert.json'.format(dat_dir)
 inpath_PDFs = '{}/{}/pdf_variation_{}.dat'.format(dat_dir,PDF_dir,'{}')
