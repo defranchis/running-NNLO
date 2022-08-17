@@ -314,23 +314,34 @@ class running_object():
             self.minuit_dep.migrad()
 
             plot = plt.errorbar(self.masses_for_fit,self.xsec_values_for_fit,self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit,linestyle='None',marker='.')
-            plot.set_label('calculated cross section (NNLO)')
+            plot.set_label('NNLO calculation (MATRIX)')
             
             m_scan = np.arange(self.masses_for_fit[0],self.masses_for_fit[-1],0.001)
             curve, = plt.plot(m_scan,self.fitQuadratic(m_scan,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2]))
-            curve.set_label('quadratic interpolation')
+            curve.set_label('Quadratic interpolation')
 
             exp, = plt.plot(m_scan,np.array([self.exp_xsec[mbin] for _ in m_scan]))
-            exp.set_label('measured cross section')
+            exp.set_label('Measured cross section (CMS)')
             
             band = plt.fill_between(m_scan,self.exp_xsec[mbin]-self.exp_err[mbin],self.exp_xsec[mbin]+self.exp_err[mbin],facecolor='yellow')
-            band.set_label('experimental uncertainty')
+            band.set_label('Experimental uncertainty')
             
-            plt.title('cross section vs mass: bin {}'.format(mbin+1))
-            plt.xlabel('$m_{t}(\mu_k/2)$ [GeV]')
-            plt.ylabel('$\sigma_{t\overline{t}}$ [pb]')
-            plt.legend(loc='upper right')
+            plt.title('Preliminary',loc='left')
+            plt.title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{}$'.format(mbin+1),loc='right')
+            plt.xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1),fontsize=12)
+            plt.ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{}$ [pb]'.format(mbin+1),fontsize=12)
 
+            handles, labels = plt.gca().get_legend_handles_labels()
+            order = [3,0,1,2]
+            plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='upper right') 
+
+            step =  self.xsec_values_for_fit[0]-self.xsec_values_for_fit[-1]
+            step/=20
+            offset = self.xsec_values_for_fit[-1] + step/2
+            plt.text(self.masses_for_fit[0],offset+2*step, 'MATRIX calculation at NNLO')
+            plt.text(self.masses_for_fit[0],offset+step, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+            plt.text(self.masses_for_fit[0],offset,'ABMP16_5_nnlo PDF set')
+            
             plt.savefig('{}/xsec_mass_bin_{}.pdf'.format(plotdir,mbin+1))
             plt.savefig('{}/xsec_mass_bin_{}.png'.format(plotdir,mbin+1))
             plt.close()
