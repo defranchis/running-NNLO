@@ -49,8 +49,7 @@ class running_object():
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
         self.addCentralPDFtoList(onlyNumUnc=True)
         self.defineUsefulVariablesForFit()
-        if not self.mtmt_only:
-            self.drawXsecVsMassNominal()
+        self.drawXsecVsMassNominal()
         
     def getExperimentalResults(self):
         exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
