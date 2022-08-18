@@ -31,10 +31,11 @@ def isGoodFit(minuit,printout=False):
         
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False,mtmt_only=False):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False,mtmt_only=False,normalised=False):
         
         self.od = output_dir
         self.mtmt_only = mtmt_only
+        self.normalised = normalised
         self.PDFsFromNLO = PDFsFromNLO
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
@@ -281,7 +282,12 @@ class running_object():
             MCstat_nuisances_PDFs_bin = [[] for _ in range(0,self.nBins)]
 
         a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
-        res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
+        if not self.normalised:
+            res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
+        else:
+            pred = self.fitQuadratic(masses,a_s,b_s,c_s)
+            pred_norm = np.delete(self.fitQuadratic(masses,a_s,b_s,c_s)/np.sum(self.fitQuadratic(masses,a_s,b_s,c_s)),-1)
+            res_array = self.exp_norm_xsec - pred_norm
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(self.cov_tot),res_array))
         return chi2 + sum(all_nuisances**2)
 
@@ -305,7 +311,13 @@ class running_object():
         self.minuit_dep.tol=1E-6
 
         self.cov_tot = self.exp_cov + self.extr_cov
-        
+
+        if self.normalised:
+            exp_xsec_wunc = np.array(unc.correlated_values(self.exp_xsec,self.cov_tot))
+            exp_norm_xsec_wunc = np.delete(exp_xsec_wunc/np.sum(exp_xsec_wunc),-1)
+            self.cov_tot = np.array(unc.covariance_matrix(exp_norm_xsec_wunc))
+            self.exp_norm_xsec = np.array([xsec.n for xsec in exp_norm_xsec_wunc])
+            
         return
 
 

@@ -24,11 +24,14 @@ def main():
 
     parser = argparse.ArgumentParser(description='specify options')
     parser.add_argument('--breakdown',action='store_true', help='approximate breakdown of uncertainties')
+    parser.add_argument('--normalised',action='store_true', help='from normalised cross sections')
     args = parser.parse_args()
 
     global od
+    if args.normalised:
+        od += '_norm'
     
-    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od,False,True)
+    main_obj = running_object(infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,od,False,True,args.normalised)
     if not os.path.exists(od):
         print('\ndirectory "{}" not found: re-running fit...\n'.format(od))
         main_obj.doFullFit()
