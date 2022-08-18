@@ -8,6 +8,9 @@ from matplotlib import pyplot as plt
 import pickle
 import copy
 
+import constants as cnst
+import mass_convert as conv
+
 plotdir = 'plots_xsec'
 
 def save_object(obj, filename):
@@ -28,9 +31,10 @@ def isGoodFit(minuit,printout=False):
         
 class running_object():
 
-    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False):
+    def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False,mtmt_only=False):
         
         self.od = output_dir
+        self.mtmt_only = mtmt_only
         self.PDFsFromNLO = PDFsFromNLO
         self.exp_xsec, self.exp_err, self.corr_matrix = self.getExperimentalResults()
         self.exp_cov = np.matmul(np.diag(self.exp_err),np.matmul(self.corr_matrix,np.diag(self.exp_err)))
@@ -38,13 +42,15 @@ class running_object():
         self.extr_cov = self.getExtrapolationImpacts()
         self.d_xsec_vs_mass, self.d_xsec_scales_all = self.readAllXsecAndScaleVariations(infile_xsec_mass)
         self.d_numunc = self.readNumericalUncertJSON(infile_num_unc)
+        self.scales = np.array([cnst.mu_1,cnst.mu_2,cnst.mu_3,cnst.mu_4])
         self.nPDFs = 30
         self.d_PDFunc = self.readPDFuncertainties(inpath_PDFs)
         self.d_PDFunc_nlo = self.readPDFuncertaintiesNLO('NNLO_dat/nnloPDFs.json')
         self.d_numunc_PDFs = self.readNumericalUncertPDFsJSON(infile_num_unc_PDFs)
         self.addCentralPDFtoList(onlyNumUnc=True)
         self.defineUsefulVariablesForFit()
-        self.drawXsecVsMassNominal()
+        if not self.mtmt_only:
+            self.drawXsecVsMassNominal()
         
     def getExperimentalResults(self):
         exp_xsec = np.array([var.xsec_1,var.xsec_2,var.xsec_3,var.xsec_4])
@@ -261,23 +267,28 @@ class running_object():
         return np.array(self.minuit_dep.values)
         
     def globalChi2(self,params):
-        masses = params[0:self.nBins]
-        all_nuisances = params[self.nBins:]
+        masses = params[0:self.n_massParams]
+        if self.mtmt_only:
+            masses = np.array([conv.mtmt2mtmu(masses[0],scale) for scale in self.scales])
+
+        all_nuisances = params[self.n_massParams:]
         if not self.PDFsFromNLO:
-            MCstat_nuisances_bin = [params[self.nBins+self.nMassPoints_integrated[i-1]:self.nBins+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
-            MCstat_nuisances_PDFs_bin = [params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
-            nuisances_PDFs = params[self.nBins+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
+            MCstat_nuisances_bin = [params[self.n_massParams+self.nMassPoints_integrated[i-1]:self.n_massParams+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
+            MCstat_nuisances_PDFs_bin = [params[self.n_massParams+sum(self.nMassPoints)+(self.nPDFs-1)*i:self.n_massParams+sum(self.nMassPoints)+(self.nPDFs-1)*(i+1)] for i in range(0,self.nBins)]
+            nuisances_PDFs = params[self.n_massParams+sum(self.nMassPoints)+(self.nPDFs-1)*self.nBins:]
         else:
-            nuisances_PDFs = params[self.nBins:self.nBins+self.nPDFs-1]
-            MCstat_nuisances_bin = [params[self.nBins+self.nPDFs-1+self.nMassPoints_integrated[i-1]:self.nBins+self.nPDFs-1+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
+            nuisances_PDFs = params[self.n_massParams:self.n_massParams+self.nPDFs-1]
+            MCstat_nuisances_bin = [params[self.n_massParams+self.nPDFs-1+self.nMassPoints_integrated[i-1]:self.n_massParams+self.nPDFs-1+self.nMassPoints_integrated[i]] for i in range(0,self.nBins)]
             MCstat_nuisances_PDFs_bin = [[] for _ in range(0,self.nBins)]
-            
+
         a_s,b_s,c_s = self.getDependencies(MCstat_nuisances_bin,MCstat_nuisances_PDFs_bin,nuisances_PDFs)
         res_array = self.exp_xsec - self.fitQuadratic(masses,a_s,b_s,c_s)
         chi2 = np.matmul(res_array,np.matmul(np.linalg.inv(self.cov_tot),res_array))
         return chi2 + sum(all_nuisances**2)
 
     def defineUsefulVariablesForFit(self):
+        
+        self.n_massParams = self.nBins if not self.mtmt_only else 1
         self.masses_bin = [np.array([float(m) for m in self.d_xsec_vs_mass[mbin]]) for mbin in range(0,self.nBins)]
         for m in self.masses_bin:
             m.sort()
@@ -360,7 +371,8 @@ class running_object():
         return
         
     def createMinuitObject(self):
-        params = np.ones(self.nBins)
+
+        params = np.ones(self.n_massParams)
         params *= 160 # initialise masses
         self.nMassPoints = [len(self.d_numunc[i].keys()) for i in range(0,self.nBins)]
         self.nMassPoints.append(0) # useful in globalChi2
@@ -398,11 +410,11 @@ class running_object():
         minuit.strategy = 2
         minuit.tol = 0
             
-        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
+        minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
         minuit.migrad()
 
         par = np.array(minuit.values)
-        np.save('{}/mass_results_{}'.format(self.od,scales),par[:self.nBins])
+        np.save('{}/mass_results_{}'.format(self.od,scales),par[:self.n_massParams])
         
         self.xsec_bin = copy.deepcopy(xsec_bin_orig)
         return
@@ -411,8 +423,8 @@ class running_object():
 
         minuit, params = self.createMinuitObject()
 
-        minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(params)]
-        minuit.limits = [(-1*math.inf,math.inf) if i<self.nBins else (-1,1) for i, _ in enumerate(params)]
+        minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
+        minuit.limits = [(-1*math.inf,math.inf) if i<self.n_massParams else (-1,1) for i, _ in enumerate(params)]
         
         pre = datetime.now()
         
@@ -421,17 +433,18 @@ class running_object():
         print('\nfirst fit took {}\n'.format(datetime.now()-pre))
         
         minuit.fixed = [False for _ in params]
-        minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.nBins else (-.3,.3) for i, _ in enumerate(params)]
+        minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.n_massParams else (-.3,.3) for i, _ in enumerate(params)]
         minuit.migrad() # second fit, with constraints and all nuisances
-                
+
         print('second fit took {}\n'.format(datetime.now()-pre))
 
+        
         pre_RP = datetime.now()
 
         minuit.strategy=2
         minuit.limits = [(-1*math.inf,math.inf) for _ in params]
         minuit.migrad() # fit with all parameters
-        
+
         print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
 
         if not self.PDFsFromNLO:
@@ -443,8 +456,9 @@ class running_object():
             par = np.array(minuit.values)
             err = np.array(minuit.errors)
 
-            np.save('{}/mass_results'.format(odRP),par[:self.nBins])
-            np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
+            np.save('{}/mass_results'.format(odRP),par[:self.n_massParams])
+            if not self.mtmt_only:
+                np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
             np.save('{}/par_values'.format(odRP),par)
             np.save('{}/par_errors'.format(odRP),err)
             np.save('{}/full_covariance'.format(odRP),cov)
@@ -469,8 +483,9 @@ class running_object():
         if not os.path.exists(self.od):
             os.makedirs(self.od)
 
-        np.save('{}/mass_results'.format(self.od),par[:self.nBins])
-        np.save('{}/mass_covariance'.format(self.od),cov[:self.nBins,:self.nBins])
+        np.save('{}/mass_results'.format(self.od),par[:self.n_massParams])
+        if not self.mtmt_only:
+            np.save('{}/mass_covariance'.format(self.od),cov[:self.nBins,:self.nBins])
         np.save('{}/par_values'.format(self.od),par)
         np.save('{}/par_errors'.format(self.od),err)
         np.save('{}/full_covariance'.format(self.od),cov)
@@ -485,15 +500,15 @@ class running_object():
 
         with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
             minuit = pickle.load(inp)
-            m_err = np.array(minuit.errors)[:self.nBins]
-            masses = np.array(minuit.values)[:self.nBins]
+            m_err = np.array(minuit.errors)[:self.n_massParams]
+            masses = np.array(minuit.values)[:self.n_massParams]
             
             minuit.strategy = 2
             minuit.tol = 0
             
-            minuit.fixed = [False if i<self.nBins else True for i, _ in enumerate(minuit.values)]
+            minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(minuit.values)]
             minuit.migrad() # fit with only exp
-            m_err_exp = np.array(minuit.errors)[:self.nBins]
+            m_err_exp = np.array(minuit.errors)[:self.n_massParams]
             
             m_err_PDF_num = (m_err**2-m_err_exp**2)**.5
 
@@ -508,7 +523,7 @@ class running_object():
         scale_down=masses-scale_down
 
         print()
-        for i in range(0,self.nBins):
+        for i in range(0,self.n_massParams):
             print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
         print()
 
