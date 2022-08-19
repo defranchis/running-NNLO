@@ -1,8 +1,8 @@
 import os, sys
 import argparse
+import pickle
 
-
-from chi2_running_object import running_object
+from chi2_running_object import running_object, isGoodFit
 
 dat_dir = 'NNLO_dat'
 PDF_dir = 'PDFs_MSbar'
