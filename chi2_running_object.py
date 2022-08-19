@@ -591,11 +591,6 @@ class running_object():
             minuit = pickle.load(inp)
             m_err = np.array(minuit.errors)[:self.n_massParams]
             masses = np.array(minuit.values)[:self.n_massParams]
-
-            # cov = np.array(minuit.covariance)[len(minuit.values)-self.nPDFs+1:,len(minuit.values)-self.nPDFs+1:]
-            # err_PDF_inv = np.linalg.inv(np.diag(np.array(minuit.errors)[len(minuit.values)-self.nPDFs+1:]))
-            # corr = np.matmul(err_PDF_inv,np.matmul(cov,err_PDF_inv))
-            # print(corr.round(2))
             
             minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(minuit.values)]
             # minuit.migrad() # fit with only exp
@@ -628,6 +623,8 @@ class running_object():
             
             if self.mtmt_only:
                 print('corresponding mtp = {:.2f} GeV'.format(conv.mtmu2mtp(masses[i],masses[i])))
+                print('corresponding mt({}) = {:.2f} GeV'.format(cnst.mu_1,conv.mtmt2mtmu(masses[i],cnst.mu_1)))
         print()
-        
+
         return
+
