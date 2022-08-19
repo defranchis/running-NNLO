@@ -33,6 +33,10 @@ class running_object():
 
     def __init__(self,infile_xsec_mass,infile_num_unc,inpath_PDFs,infile_num_unc_PDFs,output_dir='.',PDFsFromNLO=False,mtmt_only=False,normalised=False):
         
+        if normalised and not mtmt_only:
+            print('ERROR: normalised fit only for inclusive mt(mt)')
+            sys.exit()
+
         self.od = output_dir
         self.mtmt_only = mtmt_only
         self.normalised = normalised
@@ -300,10 +304,10 @@ class running_object():
         self.rel_err_xsec_bin = [np.array([self.d_numunc[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
         self.xsec_bin = [np.array([self.d_xsec_vs_mass[mbin][str(m)] for m in self.masses_bin[mbin]]) for mbin in range(0,self.nBins)]
 
-        m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)]
-        self.xsec_PDFs_bin = [np.array([float(self.d_PDFunc[pdf][mbin][m_ref_bin[mbin]]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
-        self.rel_err_xsec_PDFs_bin = [np.array([float(self.d_numunc_PDFs[pdf][mbin][float(m_ref_bin[mbin])]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
-        self.ref_mass_bin = [list(self.masses_bin[mbin]).index(float(m_ref_bin[mbin])) for mbin in range(0,self.nBins)]
+        self.m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)]
+        self.xsec_PDFs_bin = [np.array([float(self.d_PDFunc[pdf][mbin][self.m_ref_bin[mbin]]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
+        self.rel_err_xsec_PDFs_bin = [np.array([float(self.d_numunc_PDFs[pdf][mbin][float(self.m_ref_bin[mbin])]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
+        self.ref_mass_bin = [list(self.masses_bin[mbin]).index(float(self.m_ref_bin[mbin])) for mbin in range(0,self.nBins)]
 
         self.minuit_dep = iminuit.Minuit(self.chi2QuadraticFit,a=0,b=-1,c=10)
         self.minuit_dep.errordef=1
@@ -418,75 +422,146 @@ class running_object():
             minuit_orig = pickle.load(inp)
             minuit.values = copy.deepcopy(minuit_orig.values)
 
-        minuit.strategy = minuit_orig.strategy
+        minuit.strategy = minuit_orig._strategy.strategy
         minuit.tol = minuit_orig.tol
 
         minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
-        minuit.migrad()
+        # minuit.migrad()
+        self.fitAndCheck(minuit,printout=True)
 
         par = np.array(minuit.values)
         np.save('{}/mass_results_{}'.format(self.od,scales),par[:self.n_massParams])
         
         self.xsec_bin = copy.deepcopy(xsec_bin_orig)
         return
+
+    def estimatePDFexternalised(self):
+        m = np.array([self.doNominalFitPDF(i) for i in range(0,self.nPDFs)])
+        return np.sum((m - m[0])**2)**.5
+        
+    def doNominalFitPDF(self,pdf=0):
+        print('fit for PDF variation {}'.format(pdf))
+        xsec_bin_orig = copy.deepcopy(self.xsec_bin)
+
+        #m_ref_bin = [list(self.d_PDFunc[1][mbin].keys())[0] for mbin in range(0,self.nBins)]
+        #self.xsec_PDFs_bin = [np.array([float(self.d_PDFunc[pdf][mbin][m_ref_bin[mbin]]) for pdf in range(1,self.nPDFs)]) for mbin in range(0,self.nBins)]
+
+        for mbin in range(0,self.nBins):
+            if pdf>0:
+                self.xsec_bin[mbin] *= self.xsec_PDFs_bin[mbin][pdf-1]/self.xsec_bin[mbin][list(self.masses_bin[mbin]).index(float(self.m_ref_bin[mbin]))]
+            
+        minuit, params = self.createMinuitObject()
+            
+        with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
+            minuit_orig = pickle.load(inp)
+            minuit.values = copy.deepcopy(minuit_orig.values)
+
+        minuit.strategy = minuit_orig._strategy.strategy
+        minuit.tol = minuit_orig.tol
+
+        minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
+        # minuit.migrad()
+        self.fitAndCheck(minuit)
+
+        self.xsec_bin = copy.deepcopy(xsec_bin_orig)
+        return minuit.values[0]
+
+    
+    def fitAndCheck(self,minuit,printout=False,hesse=False):
+        if hesse:
+            minuit.hesse()
+        else:
+            minuit.simplex()
+            minuit.migrad()
+        if printout:
+            print(minuit.values[0:self.n_massParams])
+            print(minuit.errors[0:self.n_massParams])
+        return isGoodFit(minuit,printout)
     
     def doFullFit(self):
 
         minuit, params = self.createMinuitObject()
 
         minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
-        minuit.limits = [(-1*math.inf,math.inf) if i<self.n_massParams else (-1,1) for i, _ in enumerate(params)]
+        if not self.mtmt_only:
+            minuit.limits = [(-1*math.inf,math.inf) if i<self.n_massParams else (-1,1) for i, _ in enumerate(params)]
         
         pre = datetime.now()
         
-        minuit.migrad() # do first fit (only masses)
-
+        # minuit.migrad() # do first fit (only masses)
+        self.fitAndCheck(minuit,printout=True)
+        
         print('\nfirst fit took {}\n'.format(datetime.now()-pre))
         
         minuit.fixed = [False for _ in params]
-        minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.n_massParams else (-.3,.3) for i, _ in enumerate(params)]
-        minuit.migrad() # second fit, with constraints and all nuisances
+        
+        if not self.mtmt_only:
+            minuit.limits = [(-1*math.inf,math.inf) if i<self.n_massParams else (-1,1) for i, _ in enumerate(params)]
+            minuit.limits = [(minuit.values[i]-.3*minuit.errors[i],minuit.values[i]+.3*minuit.errors[i]) if i<self.n_massParams else (-.3,.3) for i, _ in enumerate(params)]
+        else:
+            minuit.strategy = 0
+        # minuit.migrad() # second fit, with constraints and all nuisances
+        self.fitAndCheck(minuit,printout=True)
 
         print('second fit took {}\n'.format(datetime.now()-pre))
 
-        
-        pre_RP = datetime.now()
+        if not self.mtmt_only:
 
-        minuit.strategy=2
-        minuit.limits = [(-1*math.inf,math.inf) for _ in params]
-        minuit.migrad() # fit with all parameters
+            pre_RP = datetime.now()
 
-        print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
+            minuit.strategy=2
+            minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+            # minuit.migrad() # fit with all parameters
+            self.fitAndCheck(minuit,printout=True)
+            
+            print('full fit (reduced precision) took {}\n'.format(datetime.now()-pre_RP))
 
-        if not self.PDFsFromNLO:
-            odRP = self.od+'_RP' # reduced precision
-            if not os.path.exists(odRP):
-                os.makedirs(odRP)
+            if not self.PDFsFromNLO:
+                odRP = self.od+'_RP' # reduced precision
+                if not os.path.exists(odRP):
+                    os.makedirs(odRP)
 
-            cov = np.array(minuit.covariance)
-            par = np.array(minuit.values)
-            err = np.array(minuit.errors)
+                cov = np.array(minuit.covariance)
+                par = np.array(minuit.values)
+                err = np.array(minuit.errors)
 
-            np.save('{}/mass_results'.format(odRP),par[:self.n_massParams])
-            if not self.mtmt_only:
-                np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
-            np.save('{}/par_values'.format(odRP),par)
-            np.save('{}/par_errors'.format(odRP),err)
-            np.save('{}/full_covariance'.format(odRP),cov)
+                np.save('{}/mass_results'.format(odRP),par[:self.n_massParams])
+                if not self.mtmt_only:
+                    np.save('{}/mass_covariance'.format(odRP),cov[:self.nBins,:self.nBins])
+                np.save('{}/par_values'.format(odRP),par)
+                np.save('{}/par_errors'.format(odRP),err)
+                np.save('{}/full_covariance'.format(odRP),cov)
 
-            save_object(minuit,'{}/minuit_object.pkl'.format(odRP))
+                save_object(minuit,'{}/minuit_object.pkl'.format(odRP))
         
         pre_final = datetime.now()
-        minuit.fixed = [False for _ in params]
-        minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+
+        minuit.strategy = 2 if not self.mtmt_only else 1
         
-        minuit.strategy = 2
-        minuit.tol = 0
-        minuit.migrad() # final fit
-        
+        if not self.mtmt_only:
+            minuit.fixed = [False for _ in params]
+            minuit.limits = [(-1*math.inf,math.inf) for _ in params]
+            minuit.tol = 0
+            
+        # minuit.migrad() # final fit
+        success = self.fitAndCheck(minuit,printout=True)
+
+        if self.mtmt_only and not success:
+            if not minuit.valid:
+                print('ERROR: invalid minimum')
+            elif not minuit.accurate:
+                print('WARNING: covariance not accurate, re-running hesse')
+                success = self.fitAndCheck(minuit,printout=True,hesse=True)
+                # print('WARNING: covariance not accurate, improving strategy')
+                # minuit.strategy = 2
+                success = self.fitAndCheck(minuit,printout=True)
+                if not success:
+                    print('ERROR: fit failed')
+                
         print ('\nlast step took {}'.format(datetime.now()-pre_final))        
         print ('total fit took {}\n'.format(datetime.now()-pre))
 
+        
         cov = np.array(minuit.covariance)
         par = np.array(minuit.values)
         err = np.array(minuit.errors)
@@ -506,16 +581,25 @@ class running_object():
         self.doScaleVariations()
         
         return
-
+    
     def doBreakdown(self):
 
+        # ext_PDF = self.estimatePDFexternalised()
+        # print('\nexternalised PDF uncertainty = {:.2f} GeV\n'.format(ext_PDF))
+        
         with open('{}/minuit_object.pkl'.format(self.od), 'rb') as inp:
             minuit = pickle.load(inp)
             m_err = np.array(minuit.errors)[:self.n_massParams]
             masses = np.array(minuit.values)[:self.n_massParams]
 
+            # cov = np.array(minuit.covariance)[len(minuit.values)-self.nPDFs+1:,len(minuit.values)-self.nPDFs+1:]
+            # err_PDF_inv = np.linalg.inv(np.diag(np.array(minuit.errors)[len(minuit.values)-self.nPDFs+1:]))
+            # corr = np.matmul(err_PDF_inv,np.matmul(cov,err_PDF_inv))
+            # print(corr.round(2))
+            
             minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(minuit.values)]
-            minuit.migrad() # fit with only exp
+            # minuit.migrad() # fit with only exp
+            self.fitAndCheck(minuit,printout=True)
             m_err_exp = np.array(minuit.errors)[:self.n_massParams]
             
             m_err_PDF_num = (m_err**2-m_err_exp**2)**.5
@@ -530,9 +614,20 @@ class running_object():
         scale_up-=masses
         scale_down=masses-scale_down
 
+        tot_up = (m_err**2+scale_up**2)**.5
+        tot_down = (m_err**2+scale_down**2)**.5
+        
         print()
         for i in range(0,self.n_massParams):
-            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1,masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
+            print('m{} = {:.2f} +/- {:.2f} (exp+PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1 if not self.mtmt_only else '(m)',
+                                                                                                           masses[i],m_err[i],scale_up[i],scale_down[i]))
+            print ('m{} = {:.2f} +/- {:.2f} (exp) +/- {:.2f} (PDF+num) +{:.2f} -{:.2f} (scale) GeV'.format(i+1 if not self.mtmt_only else '(m)',
+                                                                                                           masses[i],m_err_exp[i],m_err_PDF_num[i],scale_up[i],scale_down[i]))
+            print ('m{} = {:.2f} +{:.2f} -{:.2f} (tot) GeV'.format(i+1 if not self.mtmt_only else '(m)', masses[i],tot_up[i],tot_down[i]))
+            print()
+            
+            if self.mtmt_only:
+                print('corresponding mtp = {:.2f} GeV'.format(conv.mtmu2mtp(masses[i],masses[i])))
         print()
-
+        
         return
