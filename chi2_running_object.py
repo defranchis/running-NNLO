@@ -418,9 +418,9 @@ class running_object():
             minuit_orig = pickle.load(inp)
             minuit.values = copy.deepcopy(minuit_orig.values)
 
-        minuit.strategy = 2
-        minuit.tol = 0
-            
+        minuit.strategy = minuit_orig.strategy
+        minuit.tol = minuit_orig.tol
+
         minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(params)]
         minuit.migrad()
 
@@ -513,10 +513,7 @@ class running_object():
             minuit = pickle.load(inp)
             m_err = np.array(minuit.errors)[:self.n_massParams]
             masses = np.array(minuit.values)[:self.n_massParams]
-            
-            minuit.strategy = 2
-            minuit.tol = 0
-            
+
             minuit.fixed = [False if i<self.n_massParams else True for i, _ in enumerate(minuit.values)]
             minuit.migrad() # fit with only exp
             m_err_exp = np.array(minuit.errors)[:self.n_massParams]
