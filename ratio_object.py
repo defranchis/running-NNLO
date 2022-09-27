@@ -194,15 +194,15 @@ class ratio_object():
         plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$',fontsize=12)
         plt.ylabel('$m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~ m_\mathrm{t}(\mu_\mathrm{ref})$',fontsize=12)
         plt.title('running of $m_\mathrm{t}$ at NNLO in QCD',loc='right')
-        plt.title('Preliminary',loc='left')
+        # plt.title('Preliminary',loc='left')
 
-        if scale_variations:
-            plt.text(200,.87,'data-theory reduced $\chi^2$ = {:.2f}'.format(self.chi2_QCD/(self.nBins-1)))
-            plt.text(200,.855,'p-value for QCD RGE = {:.2f}'.format(self.prob_QCD))
+        # if scale_variations:
+        #     plt.text(200,.87,'data-theory reduced $\chi^2$ = {:.2f}'.format(self.chi2_QCD/(self.nBins-1)))
+        #     plt.text(200,.855,'p-value for QCD RGE = {:.2f}'.format(self.prob_QCD))
 
-        plt.text(385,1.04, 'MATRIX calculation at NNLO')
-        plt.text(385,1.025, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
-        plt.text(385,1.01,'ABMP16_5_nnlo PDF set')
+        plt.text(190,.885,'NNLO calculation: JHEP 08 (2020) 027')
+        plt.text(190,.87, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+        plt.text(190,.855,'ABMP16_5_nnlo PDF set')
         # plt.text(385,.99,'$\mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
         
         os.makedirs(plotdir,exist_ok = True)
@@ -318,8 +318,8 @@ class ratio_object():
         band = plt.fill_between(mu_scan,masses_evolved-masses_evolved_err_down,masses_evolved+masses_evolved_err_up,facecolor='yellow')
         band.set_label('evolved uncertainty at {} loops, {} flavours'.format(cnst.nloops,cnst.nflav))
 
-        offset = self.mass_values[-1]
-        plt.text(cnst.mtmt,offset+4, 'MATRIX calculation at NNLO')
+        offset = self.mass_values[-1] -2
+        plt.text(cnst.mtmt,offset+4, 'NNLO calculation: JHEP 08 (2020) 027')
         plt.text(cnst.mtmt,offset+2, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
         plt.text(cnst.mtmt,offset,'ABMP16_5_nnlo PDF set')
         
@@ -327,7 +327,7 @@ class ratio_object():
         plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$',fontsize=12)
         plt.ylabel('extracted $m_\mathrm{t}(\mu_\mathrm{m})$',fontsize=12)
         plt.title('$m_\mathrm{t}(\mu_m)$ at NNLO in QCD',loc='right')
-        plt.title('Preliminary',loc='left')
+        # plt.title('Preliminary',loc='left')
 
         os.makedirs(plotdir,exist_ok = True)
         

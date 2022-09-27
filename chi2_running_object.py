@@ -340,19 +340,19 @@ class running_object():
             self.minuit_dep.migrad()
 
             plot = plt.errorbar(self.masses_for_fit,self.xsec_values_for_fit,self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit,linestyle='None',marker='.')
-            plot.set_label('NNLO calculation (MATRIX)')
+            plot.set_label('NNLO calculation')
             
             m_scan = np.arange(self.masses_for_fit[0],self.masses_for_fit[-1],0.001)
             curve, = plt.plot(m_scan,self.fitQuadratic(m_scan,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2]))
             curve.set_label('Quadratic interpolation')
 
             exp, = plt.plot(m_scan,np.array([self.exp_xsec[mbin] for _ in m_scan]))
-            exp.set_label('Measured cross section (CMS)')
+            exp.set_label('Measured cross section')
             
             band = plt.fill_between(m_scan,self.exp_xsec[mbin]-self.exp_err[mbin],self.exp_xsec[mbin]+self.exp_err[mbin],facecolor='yellow')
             band.set_label('Experimental uncertainty')
             
-            plt.title('Preliminary',loc='left')
+            # plt.title('Preliminary',loc='left')
             plt.title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{}$'.format(mbin+1),loc='right')
             plt.xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1),fontsize=12)
             plt.ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{}$ [pb]'.format(mbin+1),fontsize=12)
@@ -364,7 +364,7 @@ class running_object():
             step =  self.xsec_values_for_fit[0]-self.xsec_values_for_fit[-1]
             step/=20
             offset = self.xsec_values_for_fit[-1] + step/2
-            plt.text(self.masses_for_fit[0],offset+2*step, 'MATRIX calculation at NNLO')
+            plt.text(self.masses_for_fit[0],offset+2*step, 'NNLO calculation: JHEP 08 (2020) 027')
             plt.text(self.masses_for_fit[0],offset+step, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
             plt.text(self.masses_for_fit[0],offset,'ABMP16_5_nnlo PDF set')
             
