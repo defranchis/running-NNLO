@@ -11,6 +11,11 @@ import copy
 import constants as cnst
 import mass_convert as conv
 
+import matplotlib.ticker as plticker
+
+from ratio_object import setstyles
+setstyles()
+
 plotdir = 'plots_xsec'
 
 def save_object(obj, filename):
@@ -353,17 +358,26 @@ class running_object():
             band.set_label('Experimental uncertainty')
             
             # plt.title('Preliminary',loc='left')
-            plt.title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{}$'.format(mbin+1),loc='right')
-            plt.xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1),fontsize=12)
-            plt.ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{}$ [pb]'.format(mbin+1),fontsize=12)
+            plt.title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$',loc='right')
+            plt.xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1))
+            plt.ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$ [pb]')
 
+            if mbin == self.nBins-1: #hack
+                plt.ylim(plt.ylim()[0],plt.ylim()[1]*1.05)            
+                
             handles, labels = plt.gca().get_legend_handles_labels()
             order = [3,0,1,2]
             plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='upper right') 
 
             step =  self.xsec_values_for_fit[0]-self.xsec_values_for_fit[-1]
-            step/=20
-            offset = self.xsec_values_for_fit[-1] + step/2
+            step/=15
+            offset = self.xsec_values_for_fit[-1] + step/3
+
+            if mbin == 2: #hacks
+                offset -= 1
+                loc = plticker.MultipleLocator(base=3.0)
+                plt.gca().xaxis.set_major_locator(loc)
+
             plt.text(self.masses_for_fit[0],offset+2*step, 'NNLO calculation: JHEP 08 (2020) 027')
             plt.text(self.masses_for_fit[0],offset+step, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
             plt.text(self.masses_for_fit[0],offset,'ABMP16_5_nnlo PDF set')

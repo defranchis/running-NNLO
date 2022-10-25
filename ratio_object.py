@@ -3,6 +3,7 @@ import numpy as np
 import uncertainties as unc
 import iminuit
 from scipy import stats
+import matplotlib
 from matplotlib import pyplot as plt
 
 import constants as cnst
@@ -15,7 +16,17 @@ global_errordef = 1
 
 plotdir = 'plots_running'
 
+def setstyles(fontsize=13):
+    axes = {'labelsize': fontsize,
+            'titlesize': fontsize}
+    
+    matplotlib.rc('axes', **axes)
+    matplotlib.rc('legend',fontsize=fontsize-1)
+    matplotlib.rc('font',size=fontsize-1)
+    matplotlib.rc('xtick',labelsize=fontsize)
+    matplotlib.rc('ytick',labelsize=fontsize)
 
+    
 class ratio_object():
 
     def __init__(self,indir,scale_vars,ref_bin=2):
@@ -163,7 +174,7 @@ class ratio_object():
         return
 
     def producePlotRatio(self,scale_variations=True):
-
+        
         err_ratios = np.array([ratio.s for ratio in self.ratios_wunc])
 
         if scale_variations:
@@ -186,13 +197,15 @@ class ratio_object():
         if not scale_variations:
             ratio_points.set_label('extracted $m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~m_\mathrm{t}(\mu_\mathrm{ref})$ at NNLO')
 
+            
         handles, labels = plt.gca().get_legend_handles_labels()
         order = [0,2,1]
         plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='lower left') 
 
         # plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$',fontsize=12)
-        plt.ylabel('$m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~ m_\mathrm{t}(\mu_\mathrm{ref})$',fontsize=12)
+
+        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$ [GeV]')
+        plt.ylabel('$m_\mathrm{t}(\mu_\mathrm{m}) ~ / ~ m_\mathrm{t}(\mu_\mathrm{ref})$')
         plt.title('running of $m_\mathrm{t}$ at NNLO in QCD',loc='right')
         # plt.title('Preliminary',loc='left')
 
@@ -200,9 +213,9 @@ class ratio_object():
         #     plt.text(200,.87,'data-theory reduced $\chi^2$ = {:.2f}'.format(self.chi2_QCD/(self.nBins-1)))
         #     plt.text(200,.855,'p-value for QCD RGE = {:.2f}'.format(self.prob_QCD))
 
-        plt.text(190,.885,'NNLO calculation: JHEP 08 (2020) 027')
+        plt.text(190,.89,'NNLO calculation: JHEP 08 (2020) 027')
         plt.text(190,.87, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
-        plt.text(190,.855,'ABMP16_5_nnlo PDF set')
+        plt.text(190,.85,'ABMP16_5_nnlo PDF set')
         # plt.text(385,.99,'$\mu_\mathrm{ref}$'+' = {:.0f} GeV'.format(self.scales[self.ref_bin]))
         
         os.makedirs(plotdir,exist_ok = True)
@@ -268,13 +281,13 @@ class ratio_object():
         curve.set_label('technicolor: $m_\mathrm{t}(m_\mathrm{t})}$ = '+'{:.1f}'.format(self.mtmt_dynmass.n) +' GeV, $\Lambda$ = '+'{:.1f}'.format(self.Lambda_dynmass.n)+' TeV')
 
         plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu_m = m_\mathrm{t\overline{t}}/2$')
-        plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$)')
+        plt.xlabel('energy scale $\mu_m = m_\mathrm{t\overline{t}}/2$ [GeV]')
+        plt.ylabel('NNLO running mass $m_\mathrm{t}(\mu$) [GeV]')
         plt.title('dynamic mass generation')
 
         plt.text(215,142,'best-fit values:')
-        plt.text(215,140,'$\Lambda = {:.1f} \pm {:.1f}$ TeV'.format(self.Lambda_dynmass.n,self.Lambda_dynmass.s), fontsize=11)
-        plt.text(215,138,'$m_\mathrm{t}(m_\mathrm{t})'+' = {:.1f} \pm {:.1f}$ GeV'.format(self.mtmt_dynmass.n,self.mtmt_dynmass.s), fontsize=11)
+        plt.text(215,140,'$\Lambda = {:.1f} \pm {:.1f}$ TeV'.format(self.Lambda_dynmass.n,self.Lambda_dynmass.s))
+        plt.text(215,138,'$m_\mathrm{t}(m_\mathrm{t})'+' = {:.1f} \pm {:.1f}$ GeV'.format(self.mtmt_dynmass.n,self.mtmt_dynmass.s))
 
         os.makedirs(plotdir,exist_ok = True)
 
@@ -319,13 +332,13 @@ class ratio_object():
         band.set_label('evolved uncertainty at {} loops, {} flavours'.format(cnst.nloops,cnst.nflav))
 
         offset = self.mass_values[-1] -2
-        plt.text(cnst.mtmt,offset+4, 'NNLO calculation: JHEP 08 (2020) 027')
-        plt.text(cnst.mtmt,offset+2, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+        plt.text(cnst.mtmt,offset+6, 'NNLO calculation: JHEP 08 (2020) 027')
+        plt.text(cnst.mtmt,offset+3, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
         plt.text(cnst.mtmt,offset,'ABMP16_5_nnlo PDF set')
         
         plt.legend(loc='lower left')
-        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$',fontsize=12)
-        plt.ylabel('extracted $m_\mathrm{t}(\mu_\mathrm{m})$',fontsize=12)
+        plt.xlabel('energy scale $\mu_\mathrm{m} = \mu_\mathrm{k}/2$ [GeV]')
+        plt.ylabel('extracted $m_\mathrm{t}(\mu_\mathrm{m})$ [GeV]')
         plt.title('$m_\mathrm{t}(\mu_m)$ at NNLO in QCD',loc='right')
         # plt.title('Preliminary',loc='left')
 
@@ -336,3 +349,4 @@ class ratio_object():
         plt.close()
 
         return
+
