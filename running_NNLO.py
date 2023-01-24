@@ -27,6 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description='specify options')
     parser.add_argument('--breakdown',action='store_true', help='approximate breakdown of uncertainties')
     parser.add_argument('--PDFsFromNLO',action='store_true', help='use PDF variations estimated using NLO calculation and NNLO PDFs')
+    parser.add_argument('--uncorrScales',action='store_true', help='uncorrelated scale variations')
     args = parser.parse_args()
 
     global od
@@ -47,7 +48,7 @@ def main():
         print('\nperforming breakdown...\n')
         main_obj.doBreakdown()
         
-    r_object = ratio_object(indir=od,scale_vars=main_obj.scale_vars)
+    r_object = ratio_object(indir=od,scale_vars=main_obj.scale_vars,uncorr_scales=args.uncorrScales)
     
     return
 

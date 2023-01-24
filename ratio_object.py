@@ -29,9 +29,10 @@ def setstyles(fontsize=13):
     
 class ratio_object():
 
-    def __init__(self,indir,scale_vars,ref_bin=2):
+    def __init__(self,indir,scale_vars,ref_bin=2,uncorr_scales=False):
         
         self.ref_bin = ref_bin-1
+        self.uncorr_scales = uncorr_scales
         self.mass_values = np.load('{}/mass_results.npy'.format(indir))
         self.cov_masses = np.load('{}/mass_covariance.npy'.format(indir))
         self.indir = indir
@@ -45,6 +46,7 @@ class ratio_object():
         self.estimateBestRunning()
         self.fitDynamicMassGeneration()
 
+        
     def estimateRatios(self):
 
         self.ratios_wunc = np.delete(self.masses_wunc / self.masses_wunc[self.ref_bin],self.ref_bin)
@@ -112,6 +114,13 @@ class ratio_object():
                          np.matmul(np.linalg.inv(tot_cov),self.ratio_values-self.getRunningX(x,np.delete(self.scales,self.ref_bin))))
 
     def getScaleCovarianceRatios(self):
+
+        if self.uncorr_scales:
+            cov_scales_m = np.diag(np.maximum(self.err_mass_scale_up,self.err_mass_scale_down)**2)
+            m_temp = np.array(unc.correlated_values(self.mass_values,cov_scales_m))
+            r_temp = np.delete(m_temp / m_temp[self.ref_bin],self.ref_bin)
+            return unc.covariance_matrix(r_temp)
+
         for b in range(0,self.nBins-1):
             up = np.array([self.scale_impacts_ratio[scales][b] for scales in self.scale_vars if not 'down' in scales])
             down = np.array([self.scale_impacts_ratio[scales][b] for scales in self.scale_vars if not 'up' in scales])
@@ -136,7 +145,6 @@ class ratio_object():
         # values = np.array([abs(self.scale_impacts_ratio['muRup_muFup'][b]) if self.ratio_values[b] < self.getTheoryRatio([self.scales[b]])[0] else abs(self.scale_impacts_ratio['muRdown_muFdown'][b]) \
         #                    for b in range(0,self.nBins-1)]) * signs
         return np.matmul(np.diag(values),np.matmul(np.ones((self.nBins-1,self.nBins-1)),np.diag(values)))
-
     
     def estimateBestRunning(self):
 
