@@ -5,6 +5,7 @@ from datetime import datetime
 import uncertainties as unc
 import variables as var
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 import pickle
 import copy
 
@@ -344,44 +345,65 @@ class running_object():
 
             self.minuit_dep.migrad()
 
-            plot = plt.errorbar(self.masses_for_fit,self.xsec_values_for_fit,self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit,linestyle='None',marker='.')
+            fig = plt.figure()
+            gs = fig.add_gridspec(2,hspace=0,height_ratios=[4,1])
+            axs = gs.subplots(sharex=True, sharey=False)
+            plot = axs[0].errorbar(self.masses_for_fit,self.xsec_values_for_fit,self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit,linestyle='None',marker='.')
             plot.set_label('NNLO calculation')
             
             m_scan = np.arange(self.masses_for_fit[0],self.masses_for_fit[-1],0.001)
-            curve, = plt.plot(m_scan,self.fitQuadratic(m_scan,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2]))
+            curve, = axs[0].plot(m_scan,self.fitQuadratic(m_scan,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2]))
             curve.set_label('Quadratic interpolation')
 
-            exp, = plt.plot(m_scan,np.array([self.exp_xsec[mbin] for _ in m_scan]))
+            exp, = axs[0].plot(m_scan,np.array([self.exp_xsec[mbin] for _ in m_scan]))
             exp.set_label('Measured cross section')
             
-            band = plt.fill_between(m_scan,self.exp_xsec[mbin]-self.exp_err[mbin],self.exp_xsec[mbin]+self.exp_err[mbin],facecolor='yellow')
+            band = axs[0].fill_between(m_scan,self.exp_xsec[mbin]-self.exp_err[mbin],self.exp_xsec[mbin]+self.exp_err[mbin],facecolor='yellow')
             band.set_label('Experimental uncertainty')
             
-            # plt.title('Preliminary',loc='left')
-            plt.title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$',loc='right')
-            plt.xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1))
-            plt.ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$ [pb]')
+            axs[0].set_title('Measured and calculated $\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$',loc='right')
+            axs[1].set_xlabel('$m_\mathrm{t}'+'(\mu_{}/2)$ [GeV]'.format(mbin+1),loc='right')
+            axs[0].set_ylabel('$\sigma_\mathrm{t\overline{t}}'+'^{('+str(mbin+1)+')}$ [pb]')
+            axs[1].set_ylabel('Ratio')
+            axs[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             if mbin == self.nBins-1: #hack
-                plt.ylim(plt.ylim()[0],plt.ylim()[1]*1.05)            
+                axs[0].set_ylim(axs[0].get_ylim()[0],axs[0].get_ylim()[1]*1.07)
+            elif mbin == 0: #hack
+                axs[0].set_ylim(axs[0].get_ylim()[0],axs[0].get_ylim()[1]*1.02)
                 
-            handles, labels = plt.gca().get_legend_handles_labels()
+            handles, labels = axs[0].get_legend_handles_labels()
             order = [3,0,1,2]
-            plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='upper right') 
-
+            axs[0].legend(handles=[handles[idx] for idx in order],labels=[labels[idx] for idx in order],loc='upper right',fontsize=10)
+            
             step =  self.xsec_values_for_fit[0]-self.xsec_values_for_fit[-1]
-            step/=15
-            offset = self.xsec_values_for_fit[-1] + step/3
+            step/=12
+            if mbin == self.nBins-1: #hack
+                step *= 1.2
+            offset = self.xsec_values_for_fit[-1] + step/3 -1.5
 
             if mbin == 2: #hacks
                 offset -= 1
                 loc = plticker.MultipleLocator(base=3.0)
-                plt.gca().xaxis.set_major_locator(loc)
+                axs[0].xaxis.set_major_locator(loc)
+            if mbin == 3: #hacks
+                offset += 1
+                
+            axs[0].text(self.masses_for_fit[0],offset+2*step, 'NNLO calculation: JHEP 08 (2020) 027')
+            axs[0].text(self.masses_for_fit[0],offset+step, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
+            axs[0].text(self.masses_for_fit[0],offset,'ABMP16_5_nnlo PDF set')
 
-            plt.text(self.masses_for_fit[0],offset+2*step, 'NNLO calculation: JHEP 08 (2020) 027')
-            plt.text(self.masses_for_fit[0],offset+step, 'CMS data at $\sqrt{s} = 13~\mathrm{TeV}$')
-            plt.text(self.masses_for_fit[0],offset,'ABMP16_5_nnlo PDF set')
+            to_divide = self.fitQuadratic(self.masses_for_fit,self.minuit_dep.values[0],self.minuit_dep.values[1],self.minuit_dep.values[2])
+            axs[1].errorbar(self.masses_for_fit,
+                            self.xsec_values_for_fit/to_divide,
+                            self.rel_err_xsec_bin[mbin]*self.xsec_values_for_fit/to_divide,
+                            linestyle='None',marker='.')
+            curve_flat, = axs[1].plot(m_scan,np.ones(len(m_scan)))
+
+            width = .035
+            axs[1].set_ylim([1-width,1+width])
             
+            plt.tight_layout()
             plt.savefig('{}/xsec_mass_bin_{}.pdf'.format(plotdir,mbin+1))
             plt.savefig('{}/xsec_mass_bin_{}.png'.format(plotdir,mbin+1))
             plt.close()
