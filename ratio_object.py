@@ -155,9 +155,9 @@ class ratio_object():
         self.prob_noRunning = stats.chi2.sf(self.chi2_noRunning,ndf)
 
         print ('\nQCD running (x=1):')
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_QCD,self.prob_QCD*100.))
+        print('chi2/ndf = {:.2f}, prob = {:.1f}%'.format(self.chi2_QCD/ndf,self.prob_QCD*100.))
         print ('\nno running (x=0):')
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_noRunning,self.prob_noRunning*100.))
+        print('chi2/ndf = {:.2f}, prob = {:.1f}%'.format(self.chi2_noRunning/ndf,self.prob_noRunning*100.))
         print('excluded at {:.1f}% C.L.'.format((1-self.prob_noRunning)*100.))
         print()
 
@@ -173,7 +173,7 @@ class ratio_object():
 
 
         print('\nbest-fit x = {:.2f} +/- {:.2f}'.format(minuit.values['x'], minuit.errors['x']))
-        print('chi2 = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit,self.prob_xFit*100.))
+        print('chi2/ndf = {:.2f}, prob = {:.1f}%'.format(self.chi2_xFit/(ndf-1),self.prob_xFit*100.))
         print()
             
         self.producePlotRatio(scale_variations=False)
